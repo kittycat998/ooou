@@ -103,11 +103,14 @@ async function repairMessageFormat(messageId) {
     let text = String(message.content || '').trim();
     if (!text) return showToast('这条消息是空的');
 
-    const alreadyFormatted = /^\[.+?[：:].+\]$/.test(text) || text.startsWith('<') || message.forwardRecord || message.isNoReplyStatus;
+    const isWrapped = text.startsWith('[') && text.endsWith(']');
+    const isStandardWrapped = /^\[[^\[\]]+?(?:的消息|的语音|的声音|的表情包|发送的表情包|发来的照片\/视频|暂时不回)[：:][\s\S]+\]$/.test(text) ||
+        /^\[NO_REPLY[:：][\s\S]+\]$/i.test(text);
+    const alreadyFormatted = isStandardWrapped || text.startsWith('<') || message.forwardRecord || message.isNoReplyStatus;
     let changed = false;
 
-    // 1. 修复裸露的 NO_REPLY 标记，转成状态卡
-    const noReplyMatch = text.match(/\[?NO_REPLY[:：]([^\]|]+)(?:\|([^\]]*?))?(?:\|([^\]]*?))?\]?/i);
+    // 1. 修复 NO_REPLY：无论有没有方括号，都转成状态卡
+    const noReplyMatch = text.match(/^\[?NO_REPLY[:：]([^\]|]+)(?:\|([^\]]*?))?(?:\|([^\]]*?))?\]?$/i);
     if (noReplyMatch) {
         message.role = 'assistant';
         message.isNoReplyStatus = true;
@@ -119,31 +122,51 @@ async function repairMessageFormat(messageId) {
         changed = true;
     }
 
-    // 2. 修复常见语音裸文本：以“语音:”/“声音:”开头
+    // 2. 补回缺失方括号：Gemini的消息：xxx → [Gemini的消息：xxx]
+    if (!changed && !isWrapped) {
+        const missingBracketPatterns = [
+            { re: /^(.+?的消息)[：:]([\s\S]+)$/i, build: (m) => `[${m[1]}：${m[2].trim()}]` },
+            { re: /^(.+?的语音)[：:]([\s\S]+)$/i, build: (m) => `[${m[1]}：${m[2].trim()}]` },
+            { re: /^(.+?的声音)[：:]([\s\S]+)$/i, build: (m) => `[${m[1].replace(/的声音$/, '的语音')}：${m[2].trim()}]` },
+            { re: /^(.+?的表情包)[：:]([\s\S]+)$/i, build: (m) => `[${m[1]}：${m[2].trim()}]` },
+            { re: /^(.+?发送的表情包)[：:]([\s\S]+)$/i, build: (m) => `[${m[1]}：${m[2].trim()}]` },
+            { re: /^(.+?发来的照片\/视频)[：:]([\s\S]+)$/i, build: (m) => `[${m[1]}：${m[2].trim()}]` },
+            { re: /^(.+?暂时不回)[：:]([\s\S]+)$/i, build: (m) => `[${m[1]}：${m[2].trim()}]` }
+        ];
+        for (const p of missingBracketPatterns) {
+            const m = text.match(p.re);
+            if (m) {
+                message.content = p.build(m);
+                changed = true;
+                break;
+            }
+        }
+    }
+
+    // 3. 修复常见语音裸文本：以“语音:”/“声音:”开头
     if (!changed && /^(语音|声音|voice)\s*[:：]/i.test(text)) {
         const body = text.replace(/^(语音|声音|voice)\s*[:：]/i, '').trim();
         message.content = `[${roleName}的语音：${body}]`;
         changed = true;
     }
 
-    // 3. 修复表情包裸文本
+    // 4. 修复表情包裸文本
     if (!changed && /^(表情包|sticker)\s*[:：]/i.test(text)) {
         const body = text.replace(/^(表情包|sticker)\s*[:：]/i, '').trim();
         message.content = message.role === 'user' ? `[${roleName}发送的表情包：${body}]` : `[${roleName}的表情包：${body}]`;
         changed = true;
     }
 
-    // 4. 修复图片/生图/照片视频裸文本
+    // 5. 修复图片/生图/照片视频裸文本
     if (!changed && /^(照片|图片|视频|生图|photo|image)\s*[:：]/i.test(text)) {
         const body = text.replace(/^(照片|图片|视频|生图|photo|image)\s*[:：]/i, '').trim();
         message.content = `[${roleName}发来的照片/视频：${body}]`;
         changed = true;
     }
 
-    // 5. 普通角色/用户消息没有标准壳时，包成 [xxx的消息：...]
+    // 6. 普通角色/用户消息没有标准壳时，包成 [xxx的消息：...]
     if (!changed && !alreadyFormatted) {
-        // 清掉模型常见的错误外壳/引号，但不碰 HTML
-        text = text.replace(/^["“]|["”]$/g, '').trim();
+        text = text.replace(/^\[|\]$/g, '').replace(/^["“]|["”]$/g, '').trim();
         message.content = `[${roleName}的消息：${text}]`;
         changed = true;
     }
@@ -157,7 +180,6 @@ async function repairMessageFormat(messageId) {
     renderMessages(false, true);
     showToast('已修复消息格式');
 }
-
 
 function startDebugEdit(messageId) {
     exitMultiSelectMode();
