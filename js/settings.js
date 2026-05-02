@@ -1839,6 +1839,8 @@ function saveCurrentApiAsPreset() {
     const data = {
         apiKey: apiKeyEl ? apiKeyEl.value : '',
         apiUrl: apiUrlEl ? apiUrlEl.value : '',
+        key: apiKeyEl ? apiKeyEl.value : '',
+        url: apiUrlEl ? apiUrlEl.value : '',
         provider: providerEl ? providerEl.value : '',
         model: modelEl ? modelEl.value : ''
     };
@@ -1864,8 +1866,8 @@ async function applyApiPreset(name) {
         const providerEl = document.querySelector('#api-provider');
         const modelEl = document.querySelector('#api-model');
 
-        if (apiKeyEl && p.data && typeof p.data.apiKey !== 'undefined') apiKeyEl.value = p.data.apiKey;
-        if (apiUrlEl && p.data && typeof p.data.apiUrl !== 'undefined') apiUrlEl.value = p.data.apiUrl;
+        if (apiKeyEl && p.data) apiKeyEl.value = (typeof p.data.apiKey !== 'undefined') ? p.data.apiKey : (p.data.key || '');
+        if (apiUrlEl && p.data) apiUrlEl.value = (typeof p.data.apiUrl !== 'undefined') ? p.data.apiUrl : (p.data.url || '');
         if (providerEl && p.data && typeof p.data.provider !== 'undefined') providerEl.value = p.data.provider;
         if (modelEl && p.data && typeof p.data.model !== 'undefined') {
             modelEl.innerHTML = `<option value="${p.data.model}">${p.data.model}</option>`;

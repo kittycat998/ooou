@@ -1,6 +1,6 @@
 {
-  "name": "UwU",
-  "short_name": "UwU",
+  "name": "°ʚᕱ⑅ᕱɞ°",
+  "short_name": "°ʚᕱ⑅ᕱɞ°",
   "start_url": ".",
   "scope": ".",
   "display": "fullscreen",
@@ -10,25 +10,16 @@
   "description": "一个有趣的网页应用",
   "icons": [
     {
-      "src": "https://i.postimg.cc/DZHdV88x/chan-135.png",
-      "sizes": "125x125",
-      "type": "image/png"
-    },
-    {
-      "src": "https://i.postimg.cc/DZHdV88x/chan-135.png",
-      "sizes": "144x144",
-      "type": "image/png"
-    },
-    {
-      "src": "https://i.postimg.cc/DZHdV88x/chan-135.png",
+      "src": "https://i.postimg.cc/7hZN7PFZ/IMG-9961.jpg",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/jpeg",
+      "purpose": "any maskable"
     },
     {
-      "src": "https://i.postimg.cc/DZHdV88x/chan-135.png",
+      "src": "https://i.postimg.cc/7hZN7PFZ/IMG-9961.jpg",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/jpeg",
+      "purpose": "any maskable"
     }
   ]
-
 }

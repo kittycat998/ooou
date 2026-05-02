@@ -1693,6 +1693,37 @@ async function importPartialBackupData(data) {
     }
 }
 
+
+function _repairApiDataAfterImport() {
+    const normalizeMain = (obj) => {
+        obj = obj && typeof obj === 'object' ? obj : {};
+        if (obj.apiUrl && !obj.url) obj.url = obj.apiUrl;
+        if (obj.apiKey && !obj.key) obj.key = obj.apiKey;
+        if (!obj.provider) obj.provider = 'newapi';
+        if (typeof obj.streamEnabled === 'undefined') obj.streamEnabled = true;
+        if (typeof obj.timePerceptionEnabled === 'undefined') obj.timePerceptionEnabled = false;
+        if (typeof obj.temperature === 'undefined') obj.temperature = 1.0;
+        return obj;
+    };
+    db.apiSettings = normalizeMain(db.apiSettings);
+    ['summaryApiSettings','backgroundApiSettings','supplementPersonaApiSettings','peekApiSettings','forumApiSettings','theaterApiSettings','novelAiSettings'].forEach(k => {
+        if (!db[k] || typeof db[k] !== 'object') db[k] = {};
+        if (db[k].apiUrl && !db[k].url) db[k].url = db[k].apiUrl;
+        if (db[k].apiKey && !db[k].key) db[k].key = db[k].apiKey;
+    });
+    ['apiPresets','summaryApiPresets','backgroundApiPresets','supplementPersonaApiPresets','peekApiPresets'].forEach(k => {
+        if (!Array.isArray(db[k])) db[k] = [];
+        db[k].forEach(p => {
+            if (!p.data) return;
+            if (p.data.apiUrl && !p.data.url) p.data.url = p.data.apiUrl;
+            if (p.data.url && !p.data.apiUrl) p.data.apiUrl = p.data.url;
+            if (p.data.apiKey && !p.data.key) p.data.key = p.data.apiKey;
+            if (p.data.key && !p.data.apiKey) p.data.apiKey = p.data.key;
+        });
+    });
+}
+
+
 // 导入备份数据
 async function importBackupData(data) {
     const startTime = Date.now();
@@ -1781,6 +1812,8 @@ async function importBackupData(data) {
         if (!Array.isArray(db.iconPresets)) db.iconPresets = [];
         if (!Array.isArray(db.homeWidgetPresets)) db.homeWidgetPresets = [];
         if (!Array.isArray(db.widgetWallpaperPresets)) db.widgetWallpaperPresets = [];
+
+        _repairApiDataAfterImport();
 
         showToast('正在写入新数据...');
         await saveData(db);
