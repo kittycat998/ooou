@@ -740,12 +740,39 @@ function _forwardRecordReadableLine(msg, chat) {
     return `${sender}：${content.replace(/<[^>]+>/g, '').trim() || '[消息]'}`;
 }
 
+function _forwardRecordSenderSnapshot(msg, chat) {
+    if (msg.role === 'user') {
+        return {
+            name: currentChatType === 'private' ? (chat.myName || '我') : ((chat.me && chat.me.nickname) || '我'),
+            avatar: currentChatType === 'private' ? (chat.myAvatar || db.myAvatar || '') : ((chat.me && chat.me.avatar) || db.myAvatar || ''),
+            isUser: true
+        };
+    }
+    if (currentChatType === 'group' && msg.senderId && chat.members) {
+        const member = chat.members.find(m => m.id === msg.senderId);
+        return {
+            name: (member && (member.groupNickname || member.realName || member.name)) || chat.name || '对方',
+            avatar: (member && member.avatar) || chat.avatar || '',
+            isUser: false
+        };
+    }
+    return {
+        name: chat.remarkName || chat.realName || chat.name || '对方',
+        avatar: chat.avatar || '',
+        isUser: false
+    };
+}
+
 function _forwardRecordCloneMessage(msg, chat) {
     const stickerInfo = _forwardRecordResolveStickerData(msg, chat);
+    const senderSnapshot = _forwardRecordSenderSnapshot(msg, chat);
     const copy = {
         id: msg.id,
         role: msg.role,
         senderId: msg.senderId || '',
+        senderName: senderSnapshot.name || '',
+        senderAvatar: senderSnapshot.avatar || '',
+        senderIsUser: !!senderSnapshot.isUser,
         content: msg.content || '',
         textForAI: _forwardRecordReadableLine(msg, chat),
         timestamp: msg.timestamp || Date.now(),

@@ -2767,7 +2767,7 @@
     color: #222;
 }
 .message-wrapper.sent .forward-record-card {
-    background: rgba(210,235,255,0.96);
+    background: rgba(255,255,255,0.96);
 }
 .forward-record-card-title {
     font-size: 17px;
@@ -2882,4 +2882,10 @@
 .forward-record-viewer-bubble:has(.forward-record-viewer-sticker) {
     background: transparent;
     padding: 0;
+}
+
+.forward-record-viewer-avatar.img {
+    object-fit: cover;
+    background: #eee;
+    color: transparent;
 }

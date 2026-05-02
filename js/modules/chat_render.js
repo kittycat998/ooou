@@ -148,6 +148,13 @@ function _forwardRecordExtractTextForView(msg) {
 
 function _forwardRecordSenderInfo(recordMsg, msg) {
     const sourceName = recordMsg.forwardRecord ? recordMsg.forwardRecord.sourceName : '聊天';
+    if (msg.senderName || msg.senderAvatar) {
+        return {
+            name: msg.senderName || (msg.role === 'user' ? '我' : sourceName),
+            isUser: typeof msg.senderIsUser === 'boolean' ? msg.senderIsUser : msg.role === 'user',
+            avatar: msg.senderAvatar || ''
+        };
+    }
     if (msg.role === 'user') return { name: '我', isUser: true, avatar: db.myAvatar || '' };
     return { name: sourceName, isUser: false, avatar: '' };
 }
@@ -192,9 +199,23 @@ function openForwardRecordViewer(messageId) {
         const info = _forwardRecordSenderInfo(recordMsg, m);
         const row = document.createElement('div');
         row.className = 'forward-record-viewer-row ' + (info.isUser ? 'sent' : 'received');
-        const avatar = document.createElement('div');
-        avatar.className = 'forward-record-viewer-avatar';
-        avatar.textContent = info.isUser ? '我' : (record.sourceName || '聊').slice(0,1);
+        let avatar;
+        if (info.avatar) {
+            avatar = document.createElement('img');
+            avatar.className = 'forward-record-viewer-avatar img';
+            avatar.src = info.avatar;
+            avatar.alt = info.name || '';
+            avatar.onerror = function() {
+                this.replaceWith(Object.assign(document.createElement('div'), {
+                    className: 'forward-record-viewer-avatar',
+                    textContent: (info.name || record.sourceName || '聊').slice(0,1)
+                }));
+            };
+        } else {
+            avatar = document.createElement('div');
+            avatar.className = 'forward-record-viewer-avatar';
+            avatar.textContent = info.isUser ? '我' : (info.name || record.sourceName || '聊').slice(0,1);
+        }
         const bubble = document.createElement('div');
         bubble.className = 'forward-record-viewer-bubble ' + (info.isUser ? 'sent' : 'received');
 
