@@ -2758,6 +2758,127 @@ function openManageMyPersonaModal() {
     modal.style.display = 'flex';
 }
 
+
+
+function _getCurrentChatForHistoryTransfer() {
+    if (typeof currentChatType === 'undefined' || typeof currentChatId === 'undefined') return null;
+    if (currentChatType === 'private') return db.characters.find(c => c.id === currentChatId);
+    if (currentChatType === 'group') return db.groups.find(g => g.id === currentChatId);
+    return null;
+}
+
+function _cloneDeepForWindowBackup(obj) {
+    return JSON.parse(JSON.stringify(obj || {}));
+}
+
+function _stripRuntimeOnlyFields(chatCopy) {
+    // 暂时只保留完整数据，避免漏掉日记/状态栏/世界书等字段。
+    // 导入时只强制保留目标窗口 id，其他都按备份覆盖。
+    return chatCopy;
+}
+
+function exportCurrentChatHistoryOnly() {
+    const chat = _getCurrentChatForHistoryTransfer();
+    if (!chat) return showToast('找不到当前窗口');
+
+    const chatCopy = _stripRuntimeOnlyFields(_cloneDeepForWindowBackup(chat));
+    const payload = {
+        type: 'ovo-full-chat-window',
+        version: 2,
+        exportedAt: Date.now(),
+        chatType: currentChatType,
+        sourceName: chat.remarkName || chat.realName || chat.name || '窗口备份',
+        sourceId: chat.id || '',
+        chat: chatCopy
+    };
+
+    const safeName = String(payload.sourceName || 'chat-window').replace(/[\\/:*?"<>|]/g, '_').slice(0, 40);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${safeName}-完整窗口备份-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+    showToast('已导出完整窗口备份');
+}
+
+function _normalizeImportedWindowPayload(data) {
+    if (!data) throw new Error('空文件');
+    if (data.type === 'ovo-full-chat-window' && data.chat) {
+        return { chatType: data.chatType || 'private', chat: data.chat, sourceName: data.sourceName || '窗口备份' };
+    }
+    // 兼容 v10 只导出的聊天记录文件
+    if (data.type === 'ovo-chat-history' && Array.isArray(data.history)) {
+        return { chatType: data.chatType || 'private', chat: { history: data.history }, sourceName: data.sourceName || '聊天记录' };
+    }
+    // 兼容直接导出的角色/群聊对象
+    if (data.history || data.persona || data.remarkName || data.realName || data.members) {
+        return { chatType: data.members ? 'group' : 'private', chat: data, sourceName: data.remarkName || data.realName || data.name || '窗口备份' };
+    }
+    if (Array.isArray(data)) {
+        return { chatType: currentChatType || 'private', chat: { history: data }, sourceName: '聊天记录' };
+    }
+    throw new Error('不是可识别的窗口备份文件');
+}
+
+function _applyImportedWindowToCurrentChat(importedChat) {
+    const targetChat = _getCurrentChatForHistoryTransfer();
+    if (!targetChat) throw new Error('找不到当前窗口');
+
+    const keepId = targetChat.id;
+    const cloned = _cloneDeepForWindowBackup(importedChat);
+
+    // 目标窗口 id 必须保留，否则后续聊天、列表、设置会找不到当前对象。
+    cloned.id = keepId;
+
+    // 如果旧文件没有 history，至少保留空数组。
+    if (!Array.isArray(cloned.history)) cloned.history = [];
+
+    Object.keys(targetChat).forEach(k => {
+        if (k !== 'id') delete targetChat[k];
+    });
+    Object.assign(targetChat, cloned);
+    targetChat.id = keepId;
+}
+
+function importChatHistoryOnlyFromFile(file) {
+    if (!file) return;
+    const targetChat = _getCurrentChatForHistoryTransfer();
+    if (!targetChat) return showToast('找不到当前窗口');
+
+    const reader = new FileReader();
+    reader.onload = async function() {
+        try {
+            const data = JSON.parse(reader.result);
+            const normalized = _normalizeImportedWindowPayload(data);
+            const importedChat = normalized.chat;
+
+            const msg = '这会把当前窗口的角色人设、世界书绑定、状态栏、日记/记忆、聊天记录和各类设置都覆盖成备份内容，但会保留当前窗口ID。确定导入吗？';
+            if (!confirm(msg)) return;
+
+            _applyImportedWindowToCurrentChat(importedChat);
+
+            await saveData();
+            if (typeof loadSettingsToSidebar === 'function' && currentChatType === 'private') {
+                try { loadSettingsToSidebar(); } catch(e) {}
+            }
+            if (typeof loadGroupSettingsToSidebar === 'function' && currentChatType === 'group') {
+                try { loadGroupSettingsToSidebar(); } catch(e) {}
+            }
+            if (typeof renderChatList === 'function') renderChatList();
+            if (typeof renderMessages === 'function') renderMessages(false, true);
+            showToast('完整窗口已导入');
+        } catch (err) {
+            console.error('导入完整窗口失败:', err);
+            showToast('导入失败：' + (err.message || '文件格式不对'));
+        }
+    };
+    reader.readAsText(file, 'utf-8');
+}
+
+
 function _getFontPresets() {
     return db.fontPresets || [];
 }
@@ -3016,6 +3137,19 @@ function setupPresetFeatures() {
     if (personaManageBtn) personaManageBtn.addEventListener('click', openManageMyPersonaModal);
     if (personaApplyBtn) personaApplyBtn.addEventListener('click', function(){ const v = personaSelect.value; if(!v) return showToast('请选择要应用的预设'); applyMyPersonaPresetToCurrentChat(v); });
     if (personaModalClose) personaModalClose.addEventListener('click', function(){ document.getElementById('mypersona-presets-modal').style.display='none'; });
+
+    const chatHistoryExportBtn = document.getElementById('chat-history-export-btn');
+    const chatHistoryImportBtn = document.getElementById('chat-history-import-btn');
+    const chatHistoryImportInput = document.getElementById('chat-history-import-input');
+    if (chatHistoryExportBtn) chatHistoryExportBtn.addEventListener('click', exportCurrentChatHistoryOnly);
+    if (chatHistoryImportBtn && chatHistoryImportInput) chatHistoryImportBtn.addEventListener('click', () => {
+        chatHistoryImportInput.value = '';
+        chatHistoryImportInput.click();
+    });
+    if (chatHistoryImportInput) chatHistoryImportInput.addEventListener('change', e => {
+        const file = e.target.files && e.target.files[0];
+        importChatHistoryOnlyFromFile(file);
+    });
 
     const globalCssModalClose = document.getElementById('global-css-close-modal');
     if (globalCssModalClose) globalCssModalClose.addEventListener('click', () => {
