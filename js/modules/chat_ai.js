@@ -1930,20 +1930,28 @@ t) 赠送亲属卡: [${character.realName}赠送亲属卡：额度{金额}元；
     }
 
     if (character.characterNoReplyEnabled) {
-        const lastNoReply = (character.history || []).slice(-3).some(m => m && m.isNoReplyStatus);
+        const recentTail = (character.history || []).slice(-8);
+        let consecutiveNoReplyCount = 0;
+        for (let i = recentTail.length - 1; i >= 0; i--) {
+            const m = recentTail[i];
+            if (m && m.isNoReplyStatus) consecutiveNoReplyCount++;
+            else if (m && m.role === 'user') continue;
+            else break;
+        }
+        const noReplyLimitReached = consecutiveNoReplyCount >= 3;
         prompt += `
 
 【允许已读不回功能】
 当前角色开启了“允许角色不回消息”。你可以根据角色人设、当前时间、关系状态与上一条消息，自主判断是否暂时不回复。适用场景包括但不限于：正在吃饭、洗澡、睡觉、上课、开会、工作忙、心情低落、冷战、生气、故意晾着、没看到手机、不知道怎么回、不想理用户、身体不舒服、正在做别的事。
 规则：
 1. 这是一种“角色自主选择”，不是随机功能。只有当不回复符合人设和情境时才使用。
-2. 不要频繁不回；${lastNoReply ? '上一轮已经不回过了，本轮必须正常回复，禁止再次输出 NO_REPLY。' : '本轮如确实适合，可以选择不回。'}
+2. 不要频繁不回；当前已连续不回 ${consecutiveNoReplyCount} 次。${noReplyLimitReached ? '已经达到上限，本轮必须正常回复，禁止输出 NO_REPLY。' : '最多允许连续不回 3 次。'}
 3. 若选择不回，整次输出只能使用固定格式：[NO_REPLY:状态|原因|提示]。
 4. 状态建议短，如：忙碌中、睡觉中、洗澡中、吃饭中、冷战中、手机未查看、已读未回、暂时不想回。
-5. 原因用角色视角写一句简短描述，不要太长。
+5. 原因必须写成 30-50 字左右的一小段，有画面感的场景描写 + 心理活动。写出角色动作、环境、情绪状态（疲惫、烦躁、冷战的别扭、忙碌的专注、困倦、赌气等），不要写成说明文。
 6. 提示用于界面展示，短句即可，如：暂时无法回复、手机未查看、现在不想说话。
 7. 若用户明显需要回应、情绪很急、正在推进重要剧情，优先正常回复，不要用不回逃避。
-示例：[NO_REPLY:洗澡中|他把手机扣在洗手台旁，水声盖过了提示音。|暂时无法回复]`;
+示例：[NO_REPLY:睡觉中|他侧身缩在被子里，指尖碰到亮起的手机，又困又别扭地把屏幕扣回枕边。|手机未查看]`;
     }
 
 

@@ -266,7 +266,10 @@
     }
 
     function createPanel() {
-        if (document.getElementById('ovo-keepalive-panel')) return;
+        const mount = document.getElementById('ovo-keepalive-settings-mount');
+        if (!mount) return;
+        const oldPanel = document.getElementById('ovo-keepalive-panel');
+        if (oldPanel) oldPanel.remove();
 
         const panel = document.createElement('div');
         panel.id = 'ovo-keepalive-panel';
@@ -295,9 +298,7 @@
                 </div>
             </div>
         `;
-        const mount = document.getElementById('ovo-keepalive-settings-mount');
-        if (mount) mount.appendChild(panel);
-        else document.body.appendChild(panel);
+        mount.appendChild(panel);
 
         statusEl = panel.querySelector('#ovo-keepalive-status');
         const enabled = panel.querySelector('#ovo-keepalive-enabled');
@@ -333,7 +334,6 @@
 
     async function init() {
         await ensureServiceWorker();
-        createPanel();
         bindVisibility();
         if (settings.enabled) {
             // 自动恢复时不一定能播放音频，iOS 可能需要再次点击开关
