@@ -703,6 +703,120 @@ async function generateCapture() {
     }
 }
 
+
+function _forwardRecordCloneMessage(msg) {
+    const copy = {
+        id: msg.id,
+        role: msg.role,
+        senderId: msg.senderId || '',
+        content: msg.content || '',
+        timestamp: msg.timestamp || Date.now(),
+        novelAiImageUrl: msg.novelAiImageUrl || '',
+        parts: msg.parts ? JSON.parse(JSON.stringify(msg.parts)) : undefined
+    };
+    return copy;
+}
+
+function _forwardRecordBuildPayload(chat, messages) {
+    const sourceName = chat.remarkName || chat.realName || chat.name || '聊天';
+    return {
+        type: 'forward-record',
+        sourceName,
+        count: messages.length,
+        createdAt: Date.now(),
+        messages: messages.map(_forwardRecordCloneMessage)
+    };
+}
+
+function _forwardRecordOpenTargetModal() {
+    if (selectedMessageIds.size === 0) return showToast('请至少选择一条消息');
+    let modal = document.getElementById('forward-record-target-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'forward-record-target-modal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-window forward-record-window">
+                <h3>转发聊天记录</h3>
+                <div class="forward-record-subtitle">选择要转发到的对话</div>
+                <div id="forward-record-target-list" class="forward-record-target-list"></div>
+                <button type="button" id="forward-record-cancel-btn" class="btn btn-neutral" style="margin-top: 14px;">取消</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.querySelector('#forward-record-cancel-btn').addEventListener('click', () => modal.classList.remove('visible'));
+    }
+
+    const list = modal.querySelector('#forward-record-target-list');
+    list.innerHTML = '';
+
+    const addTarget = (type, item, title, sub, avatar) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'forward-record-target-item';
+        row.innerHTML = `
+            <img class="forward-record-target-avatar" src="${DOMPurify.sanitize(avatar || '')}" onerror="this.style.visibility='hidden'">
+            <div class="forward-record-target-info">
+                <div class="forward-record-target-title">${DOMPurify.sanitize(title || '未命名')}</div>
+                <div class="forward-record-target-sub">${DOMPurify.sanitize(sub || '')}</div>
+            </div>
+        `;
+        row.addEventListener('click', () => forwardSelectedMessagesToChat(type, item.id));
+        list.appendChild(row);
+    };
+
+    (db.characters || []).forEach(c => {
+        addTarget('private', c, c.remarkName || c.realName || c.name || '角色', '私聊', c.avatar || '');
+    });
+    (db.groups || []).forEach(g => {
+        addTarget('group', g, g.name || '群聊', '群聊', g.avatar || '');
+    });
+
+    modal.classList.add('visible');
+}
+
+async function forwardSelectedMessagesToChat(targetType, targetId) {
+    const sourceChat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    const targetChat = (targetType === 'private') ? db.characters.find(c => c.id === targetId) : db.groups.find(g => g.id === targetId);
+    if (!sourceChat || !targetChat) return showToast('找不到目标对话');
+
+    let selected = sourceChat.history.filter(m => selectedMessageIds.has(m.id));
+    if (selected.length === 0) return showToast('请至少选择一条消息');
+    if (selected.length > 50) {
+        selected = selected.slice(0, 50);
+        showToast('最多转发前 50 条聊天记录');
+    }
+
+    const payload = _forwardRecordBuildPayload(sourceChat, selected);
+    const senderName = targetType === 'private' ? (targetChat.myName || '我') : ((targetChat.me && targetChat.me.nickname) || '我');
+    const forwardMessage = {
+        id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9),
+        role: 'user',
+        senderId: 'user_me',
+        timestamp: Date.now(),
+        content: `[${senderName}转发聊天记录：来自“${payload.sourceName}”的聊天记录，共 ${payload.count} 条消息]`,
+        forwardRecord: payload
+    };
+
+    if (!targetChat.history) targetChat.history = [];
+    targetChat.history.push(forwardMessage);
+    await saveData();
+
+    const modal = document.getElementById('forward-record-target-modal');
+    if (modal) modal.classList.remove('visible');
+
+    exitMultiSelectMode();
+    renderChatList();
+
+    if (currentChatId === targetId && currentChatType === targetType) {
+        renderMessages(false, true);
+    }
+    showToast('聊天记录已转发', 'success');
+}
+
+window.forwardSelectedMessagesToChat = forwardSelectedMessagesToChat;
+
+
 async function deleteSelectedMessages() {
     if (selectedMessageIds.size === 0) return;
     const deletedCount = selectedMessageIds.size;

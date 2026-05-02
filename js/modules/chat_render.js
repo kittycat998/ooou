@@ -129,6 +129,104 @@ async function _naiAutoGenProcess() {
     _naiAutoGenRunning = false;
 }
 
+
+function _forwardRecordExtractTextForView(msg) {
+    const content = msg.content || '';
+    let m;
+    if ((m = content.match(/\[.*?的消息[：:]([\s\S]+?)\]/))) return m[1].trim();
+    if ((m = content.match(/\[.*?引用[“"]([\s\S]*?)["”]并回复[：:]([\s\S]+?)\]/))) return '回复：' + m[2].trim();
+    if ((m = content.match(/\[.*?的语音[：:]([\s\S]+?)\]/))) return '🎙 ' + m[1].trim();
+    if (/\[.*?的表情包[：:].*?\]|\[.*?发送的表情包[：:].*?\]/.test(content)) return '[表情包]';
+    if (/\[.*?发来的照片\/视频[：:].*?\]/.test(content)) return msg.novelAiImageUrl ? '[图片]' : '[照片/视频]';
+    if (/\[.*?(?:给你转账|的转账|向.*?转账)[：:].*?\]/.test(content)) return '[转账]';
+    if (/\[.*?送来的礼物[：:].*?\]|\[.*?向.*?送来了礼物[：:].*?\]/.test(content)) return '[礼物]';
+    return content.replace(/<[^>]+>/g, '').trim() || '[消息]';
+}
+
+function _forwardRecordSenderInfo(recordMsg, msg) {
+    const sourceName = recordMsg.forwardRecord ? recordMsg.forwardRecord.sourceName : '聊天';
+    if (msg.role === 'user') return { name: '我', isUser: true, avatar: db.myAvatar || '' };
+    return { name: sourceName, isUser: false, avatar: '' };
+}
+
+function _forwardRecordTime(ts) {
+    const d = new Date(ts || Date.now());
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function openForwardRecordViewer(messageId) {
+    const chat = currentChatType === 'private' ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!chat || !chat.history) return;
+    const recordMsg = chat.history.find(m => m.id === messageId);
+    if (!recordMsg || !recordMsg.forwardRecord) return;
+
+    let modal = document.getElementById('forward-record-viewer-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'forward-record-viewer-modal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="forward-record-viewer-window">
+                <div class="forward-record-viewer-title"></div>
+                <div class="forward-record-viewer-body"></div>
+                <button type="button" class="forward-record-viewer-close">关闭</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.querySelector('.forward-record-viewer-close').addEventListener('click', () => modal.classList.remove('visible'));
+        modal.addEventListener('click', e => {
+            if (e.target === modal) modal.classList.remove('visible');
+        });
+    }
+
+    const title = modal.querySelector('.forward-record-viewer-title');
+    const body = modal.querySelector('.forward-record-viewer-body');
+    const record = recordMsg.forwardRecord;
+    title.textContent = `来自“${record.sourceName || '聊天'}”的聊天记录`;
+    body.innerHTML = '';
+
+    (record.messages || []).forEach(m => {
+        const info = _forwardRecordSenderInfo(recordMsg, m);
+        const row = document.createElement('div');
+        row.className = 'forward-record-viewer-row ' + (info.isUser ? 'sent' : 'received');
+        const avatar = document.createElement('div');
+        avatar.className = 'forward-record-viewer-avatar';
+        avatar.textContent = info.isUser ? '我' : (record.sourceName || '聊').slice(0,1);
+        const bubble = document.createElement('div');
+        bubble.className = 'forward-record-viewer-bubble ' + (info.isUser ? 'sent' : 'received');
+
+        if (m.novelAiImageUrl) {
+            const img = document.createElement('img');
+            img.src = m.novelAiImageUrl;
+            img.className = 'forward-record-viewer-img';
+            img.onclick = () => openImageViewer(img.src);
+            bubble.appendChild(img);
+        } else {
+            bubble.textContent = _forwardRecordExtractTextForView(m);
+        }
+
+        const time = document.createElement('span');
+        time.className = 'forward-record-viewer-time';
+        time.textContent = _forwardRecordTime(m.timestamp);
+
+        if (info.isUser) {
+            row.appendChild(time);
+            row.appendChild(bubble);
+            row.appendChild(avatar);
+        } else {
+            row.appendChild(avatar);
+            row.appendChild(bubble);
+            row.appendChild(time);
+        }
+        body.appendChild(row);
+    });
+
+    modal.classList.add('visible');
+}
+
+window.openForwardRecordViewer = openForwardRecordViewer;
+
+
 // 根据时间戳格式设置生成时间字符串
 function formatTimestampByFormat(timestamp, chat) {
     const d = new Date(timestamp);
@@ -289,6 +387,25 @@ function createMessageBubbleElement(message, isContinuous = false) {
     if ((isStatusUpdate || isThinking || message.isTransferAction) && !isDebugMode) return null;
     // 拦截：hiddenFromDisplay 标记的消息（如角色自知上下文消息），不渲染成气泡
     if (message.hiddenFromDisplay && !isDebugMode) return null;
+
+    if (message.forwardRecord) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'message-wrapper ' + (role === 'user' ? 'sent' : 'received');
+        wrapper.dataset.id = id;
+
+        const card = document.createElement('div');
+        card.className = 'forward-record-card';
+        card.onclick = () => openForwardRecordViewer(id);
+        const sourceName = message.forwardRecord.sourceName || '聊天';
+        const count = message.forwardRecord.count || (message.forwardRecord.messages ? message.forwardRecord.messages.length : 0);
+        card.innerHTML = `
+            <div class="forward-record-card-title">来自“${DOMPurify.sanitize(sourceName)}”的聊天记录</div>
+            <div class="forward-record-card-count">共 ${DOMPurify.sanitize(String(count))} 条消息</div>
+            <div class="forward-record-card-label">聊天记录</div>
+        `;
+        wrapper.appendChild(card);
+        return wrapper;
+    }
 
     // ... 后续代码不变 ...
 
