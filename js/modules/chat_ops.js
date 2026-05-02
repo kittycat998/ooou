@@ -704,14 +704,54 @@ async function generateCapture() {
 }
 
 
-function _forwardRecordCloneMessage(msg) {
+function _forwardRecordResolveStickerData(msg, chat) {
+    const content = msg.content || '';
+    const sentStickerMatch = content.match(/\[(?:.+?)发送的表情包[：:](.+?)\]/i);
+    const receivedStickerMatch = content.match(/\[(?:.*?的)?表情包[：:](.+?)\]/i);
+    if (msg.stickerData) return { name: (sentStickerMatch && sentStickerMatch[1] || receivedStickerMatch && receivedStickerMatch[1] || '表情包').trim(), data: msg.stickerData };
+    const match = sentStickerMatch || receivedStickerMatch;
+    if (!match) return null;
+    const stickerName = match[1].trim();
+    const groups = (chat.stickerGroups || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
+    let targetSticker = null;
+    if (groups.length > 0 && db.myStickers) {
+        targetSticker = db.myStickers.find(s => groups.includes(s.group) && s.name === stickerName);
+    }
+    if (!targetSticker && db.myStickers) {
+        targetSticker = db.myStickers.find(s => s.name === stickerName);
+    }
+    return { name: stickerName, data: targetSticker ? targetSticker.data : '' };
+}
+
+function _forwardRecordReadableLine(msg, chat) {
+    const content = msg.content || '';
+    const sender = msg.role === 'user'
+        ? (currentChatType === 'private' ? (chat.myName || '我') : ((chat.me && chat.me.nickname) || '我'))
+        : (chat.remarkName || chat.realName || chat.name || '对方');
+
+    let m;
+    if ((m = content.match(/\[.*?的消息[：:]([\s\S]+?)\]/))) return `${sender}：${m[1].trim()}`;
+    if ((m = content.match(/\[.*?引用[“"]([\s\S]*?)["”]并回复[：:]([\s\S]+?)\]/))) return `${sender}：回复「${m[1].trim()}」：${m[2].trim()}`;
+    if ((m = content.match(/\[.*?的语音[：:]([\s\S]+?)\]/))) return `${sender}：[语音] ${m[1].trim()}`;
+    if ((m = content.match(/\[(?:.*?的)?表情包[：:](.+?)\]/i)) || (m = content.match(/\[(?:.+?)发送的表情包[：:](.+?)\]/i))) return `${sender}：[表情包：${m[1].trim()}]`;
+    if ((m = content.match(/\[.*?发来的照片\/视频[：:]([\s\S]+?)\]/))) return `${sender}：[照片/视频] ${m[1].replace(/\{\{[\s\S]*?\}\}/g, '').trim()}`;
+    if (/\[.*?(?:给你转账|的转账|向.*?转账)[：:].*?\]/.test(content)) return `${sender}：[转账] ${content}`;
+    if (/\[.*?送来的礼物[：:].*?\]|\[.*?向.*?送来了礼物[：:].*?\]/.test(content)) return `${sender}：[礼物] ${content}`;
+    return `${sender}：${content.replace(/<[^>]+>/g, '').trim() || '[消息]'}`;
+}
+
+function _forwardRecordCloneMessage(msg, chat) {
+    const stickerInfo = _forwardRecordResolveStickerData(msg, chat);
     const copy = {
         id: msg.id,
         role: msg.role,
         senderId: msg.senderId || '',
         content: msg.content || '',
+        textForAI: _forwardRecordReadableLine(msg, chat),
         timestamp: msg.timestamp || Date.now(),
         novelAiImageUrl: msg.novelAiImageUrl || '',
+        stickerName: stickerInfo ? stickerInfo.name : '',
+        stickerData: stickerInfo ? stickerInfo.data : '',
         parts: msg.parts ? JSON.parse(JSON.stringify(msg.parts)) : undefined
     };
     return copy;
@@ -724,7 +764,7 @@ function _forwardRecordBuildPayload(chat, messages) {
         sourceName,
         count: messages.length,
         createdAt: Date.now(),
-        messages: messages.map(_forwardRecordCloneMessage)
+        messages: messages.map(m => _forwardRecordCloneMessage(m, chat))
     };
 }
 
@@ -789,12 +829,13 @@ async function forwardSelectedMessagesToChat(targetType, targetId) {
 
     const payload = _forwardRecordBuildPayload(sourceChat, selected);
     const senderName = targetType === 'private' ? (targetChat.myName || '我') : ((targetChat.me && targetChat.me.nickname) || '我');
+    const readableLines = (payload.messages || []).map((m, idx) => `${idx + 1}. ${m.textForAI || m.content || '[消息]'}`).join('\n');
     const forwardMessage = {
         id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9),
         role: 'user',
         senderId: 'user_me',
         timestamp: Date.now(),
-        content: `[${senderName}转发聊天记录：来自“${payload.sourceName}”的聊天记录，共 ${payload.count} 条消息]`,
+        content: `[${senderName}转发聊天记录：来自“${payload.sourceName}”的聊天记录，共 ${payload.count} 条消息\n${readableLines}]`,
         forwardRecord: payload
     };
 

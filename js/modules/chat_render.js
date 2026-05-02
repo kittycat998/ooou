@@ -131,6 +131,9 @@ async function _naiAutoGenProcess() {
 
 
 function _forwardRecordExtractTextForView(msg) {
+    if (msg.textForAI) {
+        return String(msg.textForAI).replace(/^.*?[：:]/, '').trim() || String(msg.textForAI);
+    }
     const content = msg.content || '';
     let m;
     if ((m = content.match(/\[.*?的消息[：:]([\s\S]+?)\]/))) return m[1].trim();
@@ -195,7 +198,14 @@ function openForwardRecordViewer(messageId) {
         const bubble = document.createElement('div');
         bubble.className = 'forward-record-viewer-bubble ' + (info.isUser ? 'sent' : 'received');
 
-        if (m.novelAiImageUrl) {
+        if (m.stickerData) {
+            const img = document.createElement('img');
+            img.src = m.stickerData;
+            img.className = 'forward-record-viewer-sticker';
+            img.alt = m.stickerName || '表情包';
+            img.onclick = () => openImageViewer(img.src);
+            bubble.appendChild(img);
+        } else if (m.novelAiImageUrl) {
             const img = document.createElement('img');
             img.src = m.novelAiImageUrl;
             img.className = 'forward-record-viewer-img';
