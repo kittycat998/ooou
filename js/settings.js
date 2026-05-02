@@ -1657,6 +1657,40 @@ async function saveSettingsFromSidebar() {
 }
 
 function setupApiSettingsApp() {
+    window.refreshMainApiSettingsUI = function() {
+        const modelEl = document.getElementById('api-model');
+        const providerEl = document.getElementById('api-provider');
+        const urlEl = document.getElementById('api-url');
+        const keyEl = document.getElementById('api-key');
+        const timeEl = document.getElementById('time-perception-switch');
+        const streamEl = document.getElementById('stream-switch');
+        const tempSlider = document.getElementById('temperature-slider');
+        const tempValue = document.getElementById('temperature-value');
+
+        const s = db.apiSettings || {};
+        if (providerEl) providerEl.value = s.provider || 'newapi';
+        if (urlEl) urlEl.value = s.url || s.apiUrl || '';
+        if (keyEl) keyEl.value = s.key || s.apiKey || '';
+        if (modelEl) {
+            const model = s.model || '';
+            if (model) {
+                const exists = Array.from(modelEl.options || []).some(o => o.value === model);
+                if (!exists) modelEl.innerHTML = `<option value="${model}">${model}</option>`;
+                modelEl.value = model;
+            } else if (!modelEl.options || modelEl.options.length === 0) {
+                modelEl.innerHTML = '<option value="">请先拉取模型</option>';
+            }
+        }
+        if (timeEl) timeEl.checked = !!s.timePerceptionEnabled;
+        if (streamEl) streamEl.checked = (typeof s.streamEnabled === 'undefined') ? true : !!s.streamEnabled;
+        const temp = (typeof s.temperature !== 'undefined') ? s.temperature : 1.0;
+        if (tempSlider) tempSlider.value = temp;
+        if (tempValue) tempValue.textContent = temp;
+
+        if (typeof populateApiSelect === 'function') populateApiSelect();
+    };
+
+
     const e = document.getElementById('api-form'), t = document.getElementById('fetch-models-btn'),
         a = document.getElementById('api-model'), n = document.getElementById('api-provider'),
         r = document.getElementById('api-url'), s = document.getElementById('api-key'), c = {
@@ -1665,7 +1699,7 @@ function setupApiSettingsApp() {
             claude: 'https://api.anthropic.com',
             gemini: 'https://generativelanguage.googleapis.com'
         };
-    db.apiSettings && (n.value = db.apiSettings.provider || 'newapi', r.value = db.apiSettings.url || '', s.value = db.apiSettings.key || '', db.apiSettings.model && (a.innerHTML = `<option value="${db.apiSettings.model}">${db.apiSettings.model}</option>`));
+    if (window.refreshMainApiSettingsUI) window.refreshMainApiSettingsUI();
     if (db.apiSettings && typeof db.apiSettings.timePerceptionEnabled !== 'undefined') { document.getElementById('time-perception-switch').checked = db.apiSettings.timePerceptionEnabled; }
     if (db.apiSettings && typeof db.apiSettings.streamEnabled !== 'undefined') { document.getElementById('stream-switch').checked = db.apiSettings.streamEnabled; } else { document.getElementById('stream-switch').checked = true; } 
 
@@ -5678,3 +5712,38 @@ function recalculateChatStatus(chat) {
         }
     }
 }
+
+
+// API 设置页回填补丁：防止备份导出/导入后返回 API 页显示空白默认值
+(function(){
+    if (window.__apiRefreshSwitchPatchApplied) return;
+    window.__apiRefreshSwitchPatchApplied = true;
+
+    const runRefresh = () => {
+        if (typeof window.refreshMainApiSettingsUI === 'function') {
+            setTimeout(() => window.refreshMainApiSettingsUI(), 30);
+            setTimeout(() => window.refreshMainApiSettingsUI(), 180);
+        }
+    };
+
+    document.addEventListener('click', (e) => {
+        const target = e.target && e.target.closest && e.target.closest('[data-target="api-settings-screen"], .app-icon[data-target="api-settings-screen"]');
+        if (target) runRefresh();
+    }, true);
+
+    const patchSwitch = () => {
+        if (typeof window.switchScreen === 'function' && !window.switchScreen.__apiRefreshPatched) {
+            const oldSwitch = window.switchScreen;
+            const newSwitch = function(screenId) {
+                const ret = oldSwitch.apply(this, arguments);
+                if (screenId === 'api-settings-screen') runRefresh();
+                return ret;
+            };
+            newSwitch.__apiRefreshPatched = true;
+            window.switchScreen = newSwitch;
+        }
+    };
+    patchSwitch();
+    setTimeout(patchSwitch, 200);
+    setTimeout(patchSwitch, 1000);
+})();

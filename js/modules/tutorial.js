@@ -490,6 +490,7 @@ function renderTutorialContent() {
             URL.revokeObjectURL(url);
             loadingBtn = false
             showToast('聊天记录导出成功');
+            if (typeof window.refreshMainApiSettingsUI === 'function') window.refreshMainApiSettingsUI();
         }catch (e){
             loadingBtn = false
             showToast(`导出失败, 发生错误: ${e.message}`);
