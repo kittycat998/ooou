@@ -5,6 +5,123 @@ const _naiAutoGenQueue = [];
 let _naiAutoGenRunning = false;
 // 标记：仅新消息触发自动生图，历史消息加载时不触发
 let _naiAutoGenNewMsgIds = new Set();
+
+function _getCurrentRenderChat() {
+    return currentChatType === 'private'
+        ? db.characters.find(c => c.id === currentChatId)
+        : db.groups.find(g => g.id === currentChatId);
+}
+
+function _findCurrentRenderMessage(messageId) {
+    const chat = _getCurrentRenderChat();
+    if (!chat || !chat.history) return null;
+    const message = chat.history.find(m => m.id === messageId);
+    return message ? { chat, message } : null;
+}
+
+function _extractNovelAiPromptFromMessage(message) {
+    if (!message) return '';
+    if (message.novelAiPrompt && String(message.novelAiPrompt).trim()) {
+        return String(message.novelAiPrompt).trim();
+    }
+    const content = message.content || '';
+    const photoVideoRegex = /\[(?:.+?)发来的照片\/视频[：:]([\s\S]+?)\]/;
+    const photoVideoMatch = content.match(photoVideoRegex);
+    if (!photoVideoMatch) return '';
+    const pvContent = (photoVideoMatch[1] || '').trim();
+    const tagMatch = pvContent.match(/\{\{([\s\S]+?)\}\}/);
+    return (tagMatch ? tagMatch[1] : pvContent).trim();
+}
+
+function _getNovelAiLoadingHtml(text) {
+    return `
+        <div class="nai-loading-card" style="width: 200px; height: 240px; border-radius: 12px; background: rgba(255,255,255,0.12); display:flex; align-items:center; justify-content:center; gap: 10px; overflow:hidden; position:relative; flex-direction: column;">
+            <div class="nai-loading-shimmer" style="position:absolute; inset:0; background: linear-gradient(120deg, transparent, rgba(255,255,255,0.25), transparent); animation: nai-shimmer 1.5s infinite;"></div>
+            <div style="width:24px; height:24px; border:3px solid rgba(255,255,255,0.35); border-top-color: rgba(255,255,255,0.95); border-radius:50%; animation: nai-spin 0.8s linear infinite;"></div>
+            <div style="font-size:12px; color:#fff; text-shadow: 0 1px 3px rgba(0,0,0,0.25);">${text || '正在生成图片...'}</div>
+        </div>`;
+}
+
+function _renderNovelAiImageBubbleContent(imageUrl, messageId) {
+    const safeUrl = DOMPurify.sanitize(imageUrl || '');
+    const safeMsgId = DOMPurify.sanitize(messageId || '');
+    return `
+        <img src="${safeUrl}" onclick="openImageViewer(this.src)" style="cursor: zoom-in; max-width: 280px; border-radius: 12px;">
+        <div class="nai-image-actions">
+            <button class="nai-image-action-btn reroll" onclick="event.stopPropagation(); rerollNovelAiImage('${safeMsgId}')">重roll生图</button>
+            <button class="nai-image-action-btn save" onclick="event.stopPropagation(); saveNovelAiImage('${safeMsgId}')">保存图片</button>
+        </div>
+    `;
+}
+
+async function rerollNovelAiImage(messageId) {
+    const found = _findCurrentRenderMessage(messageId);
+    if (!found) {
+        if (typeof showToast === 'function') showToast('没找到这条消息', 'error');
+        return;
+    }
+    const { message } = found;
+    const prompt = _extractNovelAiPromptFromMessage(message);
+    if (!prompt) {
+        if (typeof showToast === 'function') showToast('这条消息没有可用的生图提示词', 'warning');
+        return;
+    }
+
+    const wrapper = document.querySelector(`.message-wrapper[data-id="${messageId}"]`);
+    const bubble = wrapper ? wrapper.querySelector('.image-bubble, .pv-card') : null;
+    const oldImageUrl = message.novelAiImageUrl || '';
+
+    try {
+        if (bubble) {
+            bubble.className = 'image-bubble nai-generating';
+            bubble.innerHTML = _getNovelAiLoadingHtml('正在重新生成图片...');
+        }
+        const result = await generateNovelAiImage(prompt);
+        if (!result || !result.imageUrl) throw new Error('没有生成到图片');
+        message.novelAiImageUrl = result.imageUrl;
+        message.novelAiPrompt = prompt;
+        saveData();
+
+        if (bubble) {
+            bubble.className = 'image-bubble';
+            bubble.innerHTML = _renderNovelAiImageBubbleContent(result.imageUrl, messageId);
+        }
+        if (typeof showToast === 'function') showToast('已重新生成图片', 'success');
+    } catch (err) {
+        console.error('[NovelAI Auto] 重roll失败:', err);
+        if (bubble) {
+            if (oldImageUrl) {
+                bubble.className = 'image-bubble';
+                bubble.innerHTML = _renderNovelAiImageBubbleContent(oldImageUrl, messageId);
+            } else {
+                bubble.className = 'pv-card';
+                bubble.innerHTML = `<div class="pv-card-image-overlay">🎨</div><div class="pv-card-footer"><span>重roll失败・${(err && err.message) || '未知错误'}</span></div>`;
+            }
+        }
+        if (typeof showToast === 'function') showToast(`生图失败：${(err && err.message) || '未知错误'}`, 'error');
+    }
+}
+
+function saveNovelAiImage(messageId) {
+    const found = _findCurrentRenderMessage(messageId);
+    const imageUrl = found && found.message ? found.message.novelAiImageUrl : '';
+    if (!imageUrl) {
+        if (typeof showToast === 'function') showToast('没有可保存的图片', 'warning');
+        return;
+    }
+    const a = document.createElement('a');
+    a.href = imageUrl;
+    a.download = `novelai-${messageId || Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    if (typeof showToast === 'function') showToast('已开始保存图片', 'success');
+}
+
+window.rerollNovelAiImage = rerollNovelAiImage;
+window.saveNovelAiImage = saveNovelAiImage;
+
+
 async function _naiAutoGenProcess() {
     if (_naiAutoGenRunning) return;
     _naiAutoGenRunning = true;
@@ -999,7 +1116,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                 // 已有生成好的图片（即使 NovelAI 已关闭也显示已生成的图片）
                 bubbleElement = document.createElement('div');
                 bubbleElement.className = 'image-bubble';
-                bubbleElement.innerHTML = `<img src="${message.novelAiImageUrl}" alt="${pvContent}" onclick="openImageViewer(this.src)" style="cursor: zoom-in; max-width: 280px; border-radius: 12px;">`;
+                bubbleElement.innerHTML = _renderNovelAiImageBubbleContent(message.novelAiImageUrl, message.id);
             } else if (_naiEnabled && !isSent && _naiAutoGenNewMsgIds.has(message.id)) {
                 // NovelAI 已启用，角色发的新照片消息，触发自动生成
                 bubbleElement = document.createElement('div');
@@ -1040,13 +1157,14 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                                 const msg = chat.history.find(m => m.id === msgId);
                                 if (msg) {
                                     msg.novelAiImageUrl = result.imageUrl;
+                                    msg.novelAiPrompt = naiPrompt;
                                     saveData();
                                 }
                             }
                             
                             // 更新 DOM
                             bubbleRef.className = 'image-bubble';
-                            bubbleRef.innerHTML = `<img src="${result.imageUrl}" alt="${_pvContent}" onclick="openImageViewer(this.src)" style="cursor: zoom-in; max-width: 280px; border-radius: 12px;">`;
+                            bubbleRef.innerHTML = _renderNovelAiImageBubbleContent(result.imageUrl, msgId);
                         }
                     } catch (err) {
                         console.error('[NovelAI Auto] 生图失败:', err);
