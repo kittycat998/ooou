@@ -5430,8 +5430,22 @@ margin-left: auto !important;
     </div>
     `;
     
-    container.innerHTML = iconsSectionHTML + namesSectionHTML + widgetSectionHTML + widgetWallpaperSectionHTML + fontsSectionHTML + soundSectionHTML + globalCssSectionHTML;
+
+    const keepAliveSectionHTML = `
+    <div class="kkt-group collapsible-section" style="background-color: #fff; border: none; margin-bottom: 15px;">
+        <div class="kkt-item collapsible-header" style="background-color: #fff; border-bottom: 1px solid #f5f5f5; cursor: pointer; padding: 15px;">
+            <div class="kkt-item-label" style="font-weight:bold; color:#333; font-size: 15px;">后台保活</div>
+            <span class="collapsible-arrow">▼</span>
+        </div>
+        <div class="collapsible-content">
+            <div id="ovo-keepalive-settings-mount" style="padding: 12px 15px 15px;"></div>
+        </div>
+    </div>
+    `;
+
+    container.innerHTML = iconsSectionHTML + namesSectionHTML + widgetSectionHTML + widgetWallpaperSectionHTML + fontsSectionHTML + soundSectionHTML + globalCssSectionHTML + keepAliveSectionHTML;
     customizeForm.appendChild(container);
+    if (typeof window.OVOKeepAliveMountPanel === 'function') window.OVOKeepAliveMountPanel();
 
     populateGlobalCssPresetSelect();
     populateFontPresetSelect();

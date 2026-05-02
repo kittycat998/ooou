@@ -268,14 +268,9 @@
     function createPanel() {
         if (document.getElementById('ovo-keepalive-panel')) return;
 
-        const btn = document.createElement('button');
-        btn.id = 'ovo-keepalive-floating-btn';
-        btn.innerHTML = '后台';
-        btn.title = '后台保活';
-        document.body.appendChild(btn);
-
         const panel = document.createElement('div');
         panel.id = 'ovo-keepalive-panel';
+        panel.className = 'show';
         panel.innerHTML = `
             <div class="ovo-ka-head">
                 <div>
@@ -300,7 +295,9 @@
                 </div>
             </div>
         `;
-        document.body.appendChild(panel);
+        const mount = document.getElementById('ovo-keepalive-settings-mount');
+        if (mount) mount.appendChild(panel);
+        else document.body.appendChild(panel);
 
         statusEl = panel.querySelector('#ovo-keepalive-status');
         const enabled = panel.querySelector('#ovo-keepalive-enabled');
@@ -309,8 +306,8 @@
         enabled.checked = !!settings.enabled;
         audioMode.checked = !!settings.audioMode;
 
-        btn.addEventListener('click', () => panel.classList.toggle('show'));
-        panel.querySelector('.ovo-ka-close').addEventListener('click', () => panel.classList.remove('show'));
+        const closeBtn = panel.querySelector('.ovo-ka-close');
+        if (closeBtn) closeBtn.style.display = 'none';
 
         enabled.addEventListener('change', async () => {
             if (enabled.checked) await startKeepAlive();
@@ -345,6 +342,12 @@
         }
         updateStatus();
     }
+
+    window.OVOKeepAliveMountPanel = function() {
+        const old = document.getElementById('ovo-keepalive-panel');
+        if (old) old.remove();
+        createPanel();
+    };
 
     window.OVOKeepAlive = {
         start: startKeepAlive,

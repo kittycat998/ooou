@@ -102,3 +102,26 @@
     .ovo-ka-status { background: rgba(255,255,255,.08); }
     .ovo-ka-close { background: rgba(255,255,255,.1); color: #fff; }
 }
+
+
+/* 后台保活移入主屏幕自定义 */
+#ovo-keepalive-floating-btn {
+    display: none !important;
+}
+#ovo-keepalive-settings-mount #ovo-keepalive-panel {
+    position: static !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
+    transform: none !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    box-shadow: none !important;
+    border-radius: 14px !important;
+}
+#ovo-keepalive-settings-mount .ovo-ka-head {
+    padding: 12px 0 10px;
+}
+#ovo-keepalive-settings-mount .ovo-ka-body {
+    padding: 10px 0 0;
+}
