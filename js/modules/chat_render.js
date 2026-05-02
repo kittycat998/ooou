@@ -44,14 +44,7 @@ function _getNovelAiLoadingHtml(text) {
 
 function _renderNovelAiImageBubbleContent(imageUrl, messageId) {
     const safeUrl = DOMPurify.sanitize(imageUrl || '');
-    const safeMsgId = DOMPurify.sanitize(messageId || '');
-    return `
-        <img src="${safeUrl}" onclick="openImageViewer(this.src)" style="cursor: zoom-in; max-width: 280px; border-radius: 12px;">
-        <div class="nai-image-actions">
-            <button class="nai-image-action-btn reroll" onclick="event.stopPropagation(); rerollNovelAiImage('${safeMsgId}')">重roll生图</button>
-            <button class="nai-image-action-btn save" onclick="event.stopPropagation(); saveNovelAiImage('${safeMsgId}')">保存图片</button>
-        </div>
-    `;
+    return `<img src="${safeUrl}" onclick="openImageViewer(this.src)" style="cursor: zoom-in; max-width: 280px; border-radius: 12px;">`;
 }
 
 async function rerollNovelAiImage(messageId) {

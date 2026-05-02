@@ -50,6 +50,23 @@ function handleMessageLongPress(messageWrapper, x, y) {
         menuItems.push({label: '收藏', action: () => { if (typeof addMessageToFavorites === 'function') addMessageToFavorites(messageId); }});
     }
 
+    if (message.novelAiImageUrl) {
+        menuItems.push({
+            label: '重roll生图',
+            action: () => {
+                if (typeof rerollNovelAiImage === 'function') rerollNovelAiImage(messageId);
+                else showToast('重roll功能未加载');
+            }
+        });
+        menuItems.push({
+            label: '保存图片',
+            action: () => {
+                if (typeof saveNovelAiImage === 'function') saveNovelAiImage(messageId);
+                else showToast('保存功能未加载');
+            }
+        });
+    }
+
     menuItems.push({
         label: isDebugMode ? '退出调试' : '进入调试',
         action: () => {
