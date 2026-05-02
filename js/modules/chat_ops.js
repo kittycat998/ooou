@@ -79,6 +79,7 @@ function handleMessageLongPress(messageWrapper, x, y) {
     menuItems.push({label: '删除', action: () => enterMultiSelectMode(messageId)});
     if (!isInvisibleMessage) {
         menuItems.push({label: '多选收藏', action: () => enterMultiSelectMode(messageId, 'favorite')});
+        menuItems.push({label: '多选截图', action: () => enterMultiSelectMode(messageId, 'capture')});
     }
 
     if (menuItems.length > 0) {
@@ -537,87 +538,155 @@ function toggleMessageSelection(messageId) {
     }
 }
 
+function _captureGetSenderInfo(chat, msg) {
+    if (msg.role === 'user') {
+        return {
+            name: currentChatType === 'private' ? (chat.myName || '我') : (chat.me && chat.me.nickname) || '我',
+            avatar: currentChatType === 'private' ? (chat.myAvatar || db.myAvatar || '') : (chat.me && chat.me.avatar) || db.myAvatar || '',
+            isUser: true
+        };
+    }
+    if (currentChatType === 'group' && msg.senderId && chat.members) {
+        const member = chat.members.find(m => m.id === msg.senderId);
+        return {
+            name: (member && (member.groupNickname || member.realName || member.name)) || chat.name || '对方',
+            avatar: (member && member.avatar) || chat.avatar || '',
+            isUser: false
+        };
+    }
+    return {
+        name: chat.remarkName || chat.realName || chat.name || '对方',
+        avatar: chat.avatar || '',
+        isUser: false
+    };
+}
+
+function _captureExtractDisplayText(msg) {
+    const content = msg.content || '';
+    let m;
+    if ((m = content.match(/\[.*?的消息[：:]([\s\S]+?)\]/))) return m[1].trim();
+    if ((m = content.match(/\[.*?引用[“"]([\s\S]*?)["”]并回复[：:]([\s\S]+?)\]/))) return '回复：' + m[2].trim();
+    if ((m = content.match(/\[.*?的语音[：:]([\s\S]+?)\]/))) return '🎙 ' + m[1].trim();
+    if (/\[.*?的表情包[：:].*?\]|\[.*?发送的表情包[：:].*?\]/.test(content)) return '[表情包]';
+    if (/\[.*?发来的照片\/视频[：:].*?\]/.test(content)) return msg.novelAiImageUrl ? '[图片]' : '[照片/视频]';
+    if (/\[.*?(?:给你转账|的转账|向.*?转账)[：:].*?\]/.test(content)) return '[转账]';
+    if (/\[.*?送来的礼物[：:].*?\]|\[.*?向.*?送来了礼物[：:].*?\]/.test(content)) return '[礼物]';
+    if (/\[system[:：].*?\]|\[system-display[:：].*?\]/.test(content)) return content.replace(/^\[|\]$/g, '');
+    return content.replace(/<[^>]+>/g, '').trim() || '[消息]';
+}
+
+function _captureFormatTime(ts) {
+    const d = new Date(ts || Date.now());
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function _captureBuildBubble(row, msg, chat) {
+    const info = _captureGetSenderInfo(chat, msg);
+    const avatar = document.createElement('img');
+    avatar.className = 'capture-avatar';
+    avatar.src = info.avatar || (info.isUser ? 'https://i.postimg.cc/L8NFrBrW/1752307494497.jpg' : 'https://i.postimg.cc/1tH6ds9g/1752301200490.jpg');
+    avatar.crossOrigin = 'anonymous';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'capture-bubble ' + (info.isUser ? 'sent' : 'received');
+
+    if (msg.novelAiImageUrl) {
+        const img = document.createElement('img');
+        img.className = 'capture-image';
+        img.src = msg.novelAiImageUrl;
+        img.crossOrigin = 'anonymous';
+        bubble.appendChild(img);
+    } else {
+        bubble.textContent = _captureExtractDisplayText(msg);
+    }
+
+    const time = document.createElement('span');
+    time.className = 'capture-time';
+    time.textContent = _captureFormatTime(msg.timestamp);
+
+    if (info.isUser) {
+        row.className = 'capture-message-row sent';
+        row.appendChild(time);
+        row.appendChild(bubble);
+        row.appendChild(avatar);
+    } else {
+        row.className = 'capture-message-row received';
+        row.appendChild(avatar);
+        row.appendChild(bubble);
+        row.appendChild(time);
+    }
+}
+
 async function generateCapture() {
     if (selectedMessageIds.size === 0) return showToast('请至少选择一条消息');
-    
-    showToast('正在生成截图，请稍候...', 3000);
-    
-    // 1. 获取选中的消息元素并排序
-    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-    const sortedMessages = chat.history.filter(m => selectedMessageIds.has(m.id));
-    
-    // 2. 创建临时容器
-    const tempContainer = document.createElement('div');
-    tempContainer.style.position = 'absolute';
-    tempContainer.style.top = '-9999px';
-    tempContainer.style.left = '0';
-    tempContainer.style.width = '400px'; // 固定宽度模拟手机
-    tempContainer.style.backgroundColor = '#f5f5f5'; // 默认背景
-    if (chat.chatBg) {
-        tempContainer.style.backgroundImage = `url(${chat.chatBg})`;
-        tempContainer.style.backgroundSize = 'cover';
-        tempContainer.style.backgroundPosition = 'center';
-    } else if (chat.theme) {
-        // 应用主题背景色
-        const theme = colorThemes[chat.theme] || colorThemes['white_pink'];
-        // 这里简单处理，如果需要更精确的主题背景，可能需要更多逻辑
+
+    const selectedCount = selectedMessageIds.size;
+    if (selectedCount > 50) {
+        showToast('最多只能生成前 50 条消息截图');
     }
-    
-    tempContainer.style.padding = '20px';
-    tempContainer.style.display = 'flex';
-    tempContainer.style.flexDirection = 'column';
-    
-    // 3. 克隆并处理消息元素
-    // 为了保证样式正确，我们需要重新渲染这些消息，或者克隆现有的 DOM
-    // 这里选择重新渲染，因为现有的 DOM 可能包含多选状态的样式
-    
-    // 临时借用 createMessageBubbleElement，但需要注意它依赖全局状态
-    // 我们可以手动构建或者克隆现有的 DOM 并移除 .multi-select-selected 类
-    
+
+    showToast('正在生成截图，请稍候...', 3000);
+
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!chat || !chat.history) return showToast('找不到聊天记录');
+
+    const sortedMessages = chat.history.filter(m => selectedMessageIds.has(m.id)).slice(0, 50);
+    const sourceName = chat.remarkName || chat.realName || chat.name || '聊天';
+
+    const tempContainer = document.createElement('div');
+    tempContainer.className = 'capture-card-render';
+    tempContainer.style.position = 'fixed';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.top = '0';
+    tempContainer.style.width = '390px';
+    tempContainer.style.background = '#eef0f4';
+    tempContainer.style.fontFamily = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif';
+    tempContainer.style.overflow = 'hidden';
+
+    const header = document.createElement('div');
+    header.className = 'capture-card-header';
+    header.innerHTML = `
+        <div class="capture-title">来自“${sourceName}”的聊天记录</div>
+        <div class="capture-subtitle">共 ${sortedMessages.length} 条消息</div>
+        <div class="capture-label">聊天记录</div>
+    `;
+    tempContainer.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'capture-card-body';
     sortedMessages.forEach(msg => {
-        const originalEl = messageArea.querySelector(`.message-wrapper[data-id="${msg.id}"]`);
-        if (originalEl) {
-            const clone = originalEl.cloneNode(true);
-            clone.classList.remove('multi-select-selected');
-            clone.style.marginBottom = '15px';
-            
-            // 处理一些可能在截图时显示不正常的元素
-            // 例如：如果是 HTML 气泡，iframe 可能无法被 html2canvas 捕获
-            // 这里暂时不做特殊处理，html2canvas 对 iframe 支持有限
-            
-            tempContainer.appendChild(clone);
-        }
+        const row = document.createElement('div');
+        _captureBuildBubble(row, msg, chat);
+        body.appendChild(row);
     });
-    
-    // 添加水印
-    
-    
+    tempContainer.appendChild(body);
+
     document.body.appendChild(tempContainer);
-    
+
     try {
-        // 4. 生成截图
         const canvas = await html2canvas(tempContainer, {
-            useCORS: true, // 允许跨域图片
-            scale: 2, // 提高清晰度
-            backgroundColor: null // 透明背景
+            useCORS: true,
+            allowTaint: true,
+            scale: 2,
+            backgroundColor: '#eef0f4',
+            logging: false
         });
-        
+
         const imgUrl = canvas.toDataURL('image/png');
-        
-        // 5. 显示结果
         const previewContainer = document.getElementById('capture-preview-container');
         previewContainer.innerHTML = '';
         const img = document.createElement('img');
         img.src = imgUrl;
+        img.style.maxWidth = '100%';
+        img.style.borderRadius = '10px';
         previewContainer.appendChild(img);
-        
-        // 设置下载按钮
+
         const downloadBtn = document.getElementById('download-capture-btn');
         if (downloadBtn) {
             downloadBtn.onclick = () => {
                 const link = document.createElement('a');
                 link.href = imgUrl;
-                link.download = `uwu_chat_${new Date().getTime()}.png`;
+                link.download = `chat-record-${Date.now()}.png`;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
@@ -626,12 +695,11 @@ async function generateCapture() {
 
         document.getElementById('capture-result-modal').classList.add('visible');
         exitMultiSelectMode();
-        
     } catch (error) {
         console.error('截图生成失败:', error);
         showToast('截图生成失败，请重试');
     } finally {
-        document.body.removeChild(tempContainer);
+        if (tempContainer && tempContainer.parentNode) tempContainer.parentNode.removeChild(tempContainer);
     }
 }
 
