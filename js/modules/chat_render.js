@@ -419,6 +419,32 @@ function createMessageBubbleElement(message, isContinuous = false) {
     // 拦截：hiddenFromDisplay 标记的消息（如角色自知上下文消息），不渲染成气泡
     if (message.hiddenFromDisplay && !isDebugMode) return null;
 
+    if (message.isNoReplyStatus && !isDebugMode) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'message-wrapper received no-reply-wrapper';
+        wrapper.dataset.id = id;
+
+        const card = document.createElement('div');
+        card.className = 'no-reply-card';
+        const charName = (chat && (chat.remarkName || chat.realName || chat.name)) || '对方';
+        const avatarUrl = (chat && chat.avatar) || '';
+        card.innerHTML = `
+            <div class="no-reply-head">
+                ${avatarUrl ? `<img class="no-reply-avatar" src="${DOMPurify.sanitize(avatarUrl)}">` : `<div class="no-reply-avatar placeholder">${DOMPurify.sanitize(charName.slice(0,1))}</div>`}
+                <div class="no-reply-meta">
+                    <div class="no-reply-name">${DOMPurify.sanitize(charName)}</div>
+                    <div class="no-reply-status">${DOMPurify.sanitize(message.noReplyStatus || '忙碌中')}</div>
+                </div>
+            </div>
+            <div class="no-reply-text">
+                ${DOMPurify.sanitize(message.noReplyReason || '他暂时没有回复这条消息。')}
+            </div>
+            <div class="no-reply-hint">・${DOMPurify.sanitize(message.noReplyHint || '暂时无法回复')}</div>
+        `;
+        wrapper.appendChild(card);
+        return wrapper;
+    }
+
     if (message.forwardRecord) {
         const wrapper = document.createElement('div');
         wrapper.className = 'message-wrapper ' + (role === 'user' ? 'sent' : 'received');

@@ -2889,3 +2889,68 @@
     background: #eee;
     color: transparent;
 }
+
+
+/* 角色已读不回状态卡 */
+.no-reply-wrapper {
+    justify-content: flex-start;
+    margin: 10px 0;
+}
+.no-reply-card {
+    max-width: 82%;
+    background: rgba(255,255,255,0.92);
+    border-radius: 18px;
+    padding: 14px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.08);
+    color: #4b5563;
+}
+.no-reply-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.no-reply-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    object-fit: cover;
+    background: #f1f1f1;
+    flex-shrink: 0;
+}
+.no-reply-avatar.placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    color: #999;
+}
+.no-reply-name {
+    font-size: 16px;
+    font-weight: 850;
+    color: #263241;
+}
+.no-reply-status {
+    display: inline-block;
+    margin-top: 3px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #eef1f5;
+    color: #7b8491;
+    font-size: 12px;
+    font-weight: 700;
+}
+.no-reply-text {
+    font-size: 14px;
+    line-height: 1.65;
+    color: #596575;
+    background: rgba(247,248,250,0.9);
+    border-radius: 14px;
+    padding: 11px 12px;
+}
+.no-reply-hint {
+    margin-top: 9px;
+    font-size: 12px;
+    color: #a2a9b3;
+    text-align: right;
+}

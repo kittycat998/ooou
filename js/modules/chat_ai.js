@@ -733,6 +733,29 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             }
         }
 
+        // 1.7 已读不回：识别 [NO_REPLY:状态|原因|提示]，保存为状态卡，不进入上下文
+        const noReplyMatch = fullResponse.trim().match(/^\[NO_REPLY[:：]([^\]|]+)(?:\|([^\]]*?))?(?:\|([^\]]*?))?\]$/i);
+        if (targetChatType === 'private' && chat.characterNoReplyEnabled && noReplyMatch) {
+            const status = (noReplyMatch[1] || '忙碌中').trim();
+            const reason = (noReplyMatch[2] || '').trim();
+            const hint = (noReplyMatch[3] || '暂时无法回复').trim();
+            const noReplyMsg = {
+                id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+                role: 'assistant',
+                content: `[${chat.realName || '对方'}暂时不回：${status}${reason ? '｜' + reason : ''}]`,
+                timestamp: Date.now(),
+                isNoReplyStatus: true,
+                noReplyStatus: status,
+                noReplyReason: reason,
+                noReplyHint: hint,
+                isContextDisabled: true
+            };
+            chat.history.push(noReplyMsg);
+            addMessageBubble(noReplyMsg, targetChatId, targetChatType);
+            await saveData();
+            return;
+        }
+
         // 2. 捕获并分离 <thinking> 内容
         const thinkingMatch = fullResponse.match(/<thinking>([\s\S]*?)<\/thinking>/);
         if (thinkingMatch) {
@@ -1905,6 +1928,24 @@ t) 赠送亲属卡: [${character.realName}赠送亲属卡：额度{金额}元；
 
 **示例**：若决定收藏某条用户消息（其前有 [id:msg_123]），在回复中写 [FAVORITE:msg_123:他的童年梦想，反映核心价值观]，再写你的正常聊天内容。`;
     }
+
+    if (character.characterNoReplyEnabled) {
+        const lastNoReply = (character.history || []).slice(-3).some(m => m && m.isNoReplyStatus);
+        prompt += `
+
+【允许已读不回功能】
+当前角色开启了“允许角色不回消息”。你可以根据角色人设、当前时间、关系状态与上一条消息，自主判断是否暂时不回复。适用场景包括但不限于：正在吃饭、洗澡、睡觉、上课、开会、工作忙、心情低落、冷战、生气、故意晾着、没看到手机、不知道怎么回、不想理用户、身体不舒服、正在做别的事。
+规则：
+1. 这是一种“角色自主选择”，不是随机功能。只有当不回复符合人设和情境时才使用。
+2. 不要频繁不回；${lastNoReply ? '上一轮已经不回过了，本轮必须正常回复，禁止再次输出 NO_REPLY。' : '本轮如确实适合，可以选择不回。'}
+3. 若选择不回，整次输出只能使用固定格式：[NO_REPLY:状态|原因|提示]。
+4. 状态建议短，如：忙碌中、睡觉中、洗澡中、吃饭中、冷战中、手机未查看、已读未回、暂时不想回。
+5. 原因用角色视角写一句简短描述，不要太长。
+6. 提示用于界面展示，短句即可，如：暂时无法回复、手机未查看、现在不想说话。
+7. 若用户明显需要回应、情绪很急、正在推进重要剧情，优先正常回复，不要用不回逃避。
+示例：[NO_REPLY:洗澡中|他把手机扣在洗手台旁，水声盖过了提示音。|暂时无法回复]`;
+    }
+
 
     if (character.myName) {
         prompt = prompt.replace(/\{\{user\}\}/gi, character.myName);

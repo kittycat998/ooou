@@ -1025,6 +1025,8 @@ function loadSettingsToSidebar() {
 
         const charAutoFavEl = document.getElementById('setting-char-auto-favorite');
         if (charAutoFavEl) charAutoFavEl.checked = e.characterAutoFavoriteEnabled || false;
+        const charNoReplyEl = document.getElementById('setting-char-no-reply-enabled');
+        if (charNoReplyEl) charNoReplyEl.checked = e.characterNoReplyEnabled || false;
 
         // 加载小剧场设置
         const charTheaterEnabledEl = document.getElementById('setting-char-theater-enabled');
@@ -1472,6 +1474,8 @@ async function saveSettingsFromSidebar() {
         e.autoJournalInterval = (isNaN(autoJournalIntervalInput) || autoJournalIntervalInput < 10) ? 100 : autoJournalIntervalInput;
         const charAutoFavEl = document.getElementById('setting-char-auto-favorite');
         e.characterAutoFavoriteEnabled = charAutoFavEl ? charAutoFavEl.checked : false;
+        const charNoReplyEl = document.getElementById('setting-char-no-reply-enabled');
+        e.characterNoReplyEnabled = charNoReplyEl ? charNoReplyEl.checked : false;
 
         // 保存小剧场设置
         const charTheaterEnabledSave = document.getElementById('setting-char-theater-enabled');
