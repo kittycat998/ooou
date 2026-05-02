@@ -1441,7 +1441,68 @@ window.sendPayResponse = async function(msgId, action) {
 };
 
 
+
+function _ovoNotifyIncomingMessage(message, targetChatId, targetChatType) {
+    try {
+        if (!message || message.role === 'user' || message.isThinking) return;
+        if (!window.OVOKeepAlive || typeof window.OVOKeepAlive.notify !== 'function') return;
+
+        // 只在页面隐藏/后台，或消息不是当前打开会话时发系统通知，避免前台聊天时疯狂弹。
+        const isOffscreen = document.hidden || targetChatId !== currentChatId || targetChatType !== currentChatType;
+        if (!isOffscreen) return;
+
+        let senderName = 'OVO';
+        let senderAvatar = './manifest.json';
+        if (targetChatType === 'private') {
+            const c = db.characters && db.characters.find(x => x.id === targetChatId);
+            if (c) {
+                senderName = c.remarkName || c.realName || c.name || '新消息';
+                senderAvatar = c.avatar || senderAvatar;
+            }
+        } else if (targetChatType === 'group') {
+            const g = db.groups && db.groups.find(x => x.id === targetChatId);
+            if (g) {
+                senderName = g.name || '群聊消息';
+                senderAvatar = g.avatar || senderAvatar;
+                if (message.senderId && g.members) {
+                    const m = g.members.find(x => x.id === message.senderId);
+                    if (m) senderName = (m.groupNickname || m.realName || senderName) + ' · ' + senderName;
+                }
+            }
+        }
+
+        let previewText = message.content || '';
+        const textMatch = previewText.match(/\[.*?的消息[：:]([\s\S]+?)\]/);
+        if (textMatch) previewText = textMatch[1];
+        else if (/\[.*?的表情包[：:].*?\]/.test(previewText)) previewText = '[表情包]';
+        else if (/\[.*?的语音[：:].*?\]/.test(previewText)) previewText = '[语音]';
+        else if (/\[.*?发来的照片\/视频[：:].*?\]/.test(previewText)) previewText = '[照片/视频]';
+        else if (/\[.*?(?:转账|向.*?转账)[：:].*?\]/.test(previewText)) previewText = '[转账]';
+        else if (/\[(.+?)的位置[：:].*?\]/.test(previewText)) previewText = '[定位]';
+        else if (/\[.*?送来的礼物[：:].*?\]/.test(previewText)) previewText = '[礼物]';
+        else if (message.parts && message.parts.some(p => p.type === 'html')) previewText = '[互动]';
+
+        previewText = String(previewText)
+            .replace(/<thinking>[\s\S]*?<\/thinking>/g, '')
+            .replace(/<[^>]+>/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        if (!previewText) previewText = '发来了一条新消息';
+
+        window.OVOKeepAlive.notify(senderName, previewText.slice(0, 80), {
+            chatId: targetChatId,
+            chatType: targetChatType,
+            messageId: message.id,
+            icon: senderAvatar
+        });
+    } catch (e) {
+        console.warn('[OVO保活] 消息通知触发失败:', e);
+    }
+}
+
 function addMessageBubble(message, targetChatId, targetChatType) {
+    _ovoNotifyIncomingMessage(message, targetChatId, targetChatType);
     if (targetChatId !== currentChatId || targetChatType !== currentChatType) {
         const senderChat = (targetChatType === 'private')
             ? db.characters.find(c => c.id === targetChatId)

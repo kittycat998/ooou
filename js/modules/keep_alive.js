@@ -165,8 +165,8 @@
             await keepAudio.play();
             console.log('[OVO保活] 静音音频保活已启动');
         } catch (e) {
-            console.warn('[OVO保活] 静音音频播放失败，需要用户再次点击开启:', e);
-            toast('音频保活启动失败，请再点一次开启', 'warning');
+            console.warn('[OVO保活] 静音音频播放失败，浏览器可能禁止后台音频:', e);
+            // 不再反复弹提示。通知和心跳仍可继续工作。
         }
     }
 
@@ -261,7 +261,7 @@
             <div><b>状态：</b>${mode} / ${hidden}</div>
             <div><b>通知：</b>${perm}</div>
             <div><b>心跳：</b>${formatTime(settings.lastHeartbeat)}</div>
-            <div style="opacity:.65;margin-top:4px;">纯前端保活不能保证关闭网页后仍推送，适合 PWA/浏览器后台尽量不断。</div>
+            <div style="opacity:.65;margin-top:4px;">纯前端保活不能保证关闭网页后仍推送；音频失败也不影响测试通知/消息通知。</div>
         `;
     }
 
