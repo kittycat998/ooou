@@ -1091,14 +1091,36 @@ async function confirmInsertMessage() {
         newTimestamp = currentMessage.timestamp + 60000;
     }
 
-    // 创建新消息
+    // 创建新消息：跟随当前被编辑消息的发送方。
+    // 修复：在 char 消息下方点“新增消息”时，不能再强制写成 user。
+    const isAssistantInsert = currentMessage.role === 'assistant' || currentMessage.role === 'system';
+    let senderLabel = chat.myName || '我';
+    let newRole = 'user';
+    let newSenderId = 'user_me';
+
+    if (isAssistantInsert) {
+        newRole = 'assistant';
+        if (currentChatType === 'private') {
+            senderLabel = chat.realName || chat.remarkName || chat.name || '对方';
+            newSenderId = undefined;
+        } else {
+            const sourceSender = chat.members && currentMessage.senderId
+                ? chat.members.find(m => m.id === currentMessage.senderId)
+                : null;
+            senderLabel = (sourceSender && (sourceSender.realName || sourceSender.groupNickname || sourceSender.name)) || currentMessage.name || chat.name || '对方';
+            newSenderId = currentMessage.senderId;
+        }
+    }
+
     const newMessage = {
         id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-        content: `[${chat.myName || '我'}的消息：${newContent}]`,
+        content: `[${senderLabel}的消息：${newContent}]`,
         timestamp: newTimestamp,
-        role: 'user',
-        senderId: 'user_me'
+        role: newRole
     };
+
+    if (newSenderId) newMessage.senderId = newSenderId;
+    if (isAssistantInsert && currentMessage.isStatusUpdate) newMessage.isStatusUpdate = false;
 
     // 插入新消息到数组
     chat.history.splice(currentMessageIndex + 1, 0, newMessage);
