@@ -546,47 +546,102 @@ function exportJournals() {
     showToast(`已导出 ${(payload.journals || []).length} 篇日记`);
 }
 
+function _extractJournalsFromImportData(data) {
+    if (Array.isArray(data)) return data;
+    if (!data || typeof data !== 'object') throw new Error('文件不是有效 JSON 对象');
+
+    // v12 日记导出文件
+    if (Array.isArray(data.journals)) return data.journals;
+
+    // 直接导出的窗口/角色对象
+    if (Array.isArray(data.memoryJournals)) return data.memoryJournals;
+
+    // v11 完整窗口备份
+    if (data.chat && Array.isArray(data.chat.memoryJournals)) return data.chat.memoryJournals;
+
+    // 兼容某些备份把数据塞在 character/group 里
+    if (data.character && Array.isArray(data.character.memoryJournals)) return data.character.memoryJournals;
+    if (data.group && Array.isArray(data.group.memoryJournals)) return data.group.memoryJournals;
+
+    throw new Error('文件里没有找到日记数据');
+}
+
 function importJournals(file) {
-    if (!file) return;
-    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-    if (!chat) return showToast('找不到当前聊天');
+    if (!file) {
+        showToast('没有选择文件');
+        return;
+    }
+
+    const chat = (currentChatType === 'private')
+        ? db.characters.find(c => c.id === currentChatId)
+        : db.groups.find(g => g.id === currentChatId);
+
+    if (!chat) {
+        showToast('找不到当前窗口，先进入要导入的角色/群聊');
+        return;
+    }
+
+    showToast('正在读取日记文件...');
 
     const reader = new FileReader();
+
+    reader.onerror = function() {
+        showToast('读取文件失败，请重新选择');
+    };
+
     reader.onload = async function() {
         try {
-            const data = JSON.parse(reader.result);
-            let journals = [];
-            if (Array.isArray(data)) journals = data;
-            else if (data && Array.isArray(data.journals)) journals = data.journals;
-            else if (data && Array.isArray(data.memoryJournals)) journals = data.memoryJournals;
-            else throw new Error('文件里没有 journals 数组');
+            const raw = String(reader.result || '').trim();
+            if (!raw) throw new Error('文件是空的');
+
+            const data = JSON.parse(raw);
+            let journals = _extractJournalsFromImportData(data);
 
             journals = JSON.parse(JSON.stringify(journals)).map((j, idx) => {
+                if (!j || typeof j !== 'object') j = { title: '导入日记', content: String(j || '') };
                 if (!j.id) j.id = 'imported_journal_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 8);
+                if (!j.title) j.title = '导入日记';
+                if (!j.content) j.content = '';
                 if (!j.createdAt) j.createdAt = Date.now() + idx;
                 if (!j.range) j.range = { start: 0, end: 0 };
                 return j;
             });
 
-            const mode = (chat.memoryJournals && chat.memoryJournals.length)
-                ? prompt('当前已有日记。输入 1 覆盖，输入 2 追加：', '2')
-                : '1';
-            if (mode !== '1' && mode !== '2') return;
+            if (!journals.length) {
+                showToast('文件里没有日记');
+                return;
+            }
 
-            if (mode === '2') chat.memoryJournals = (chat.memoryJournals || []).concat(journals);
-            else chat.memoryJournals = journals;
+            let mode = '1';
+            if (chat.memoryJournals && chat.memoryJournals.length) {
+                mode = prompt(`当前窗口已有 ${chat.memoryJournals.length} 篇日记。输入 1 覆盖，输入 2 追加：`, '2');
+                if (mode !== '1' && mode !== '2') {
+                    showToast('已取消导入');
+                    return;
+                }
+            }
 
+            if (mode === '2') {
+                chat.memoryJournals = (chat.memoryJournals || []).concat(journals);
+            } else {
+                chat.memoryJournals = journals;
+            }
+
+            window._journalSearchKeyword = '';
             await saveData();
-            renderJournalList();
-            showToast(`已导入 ${journals.length} 篇日记`);
+
+            if (typeof renderJournalList === 'function') renderJournalList();
+            if (typeof renderChatList === 'function') renderChatList();
+
+            showToast(`已导入 ${journals.length} 篇日记到当前窗口`);
         } catch (err) {
             console.error('导入日记失败:', err);
             showToast('导入失败：' + (err.message || '文件格式不对'));
         }
     };
+
     reader.readAsText(file, 'utf-8');
 }
-
 
 function renderJournalList() {
     const container = document.getElementById('journal-list-container');
