@@ -48,6 +48,7 @@ function handleMessageLongPress(messageWrapper, x, y) {
 
     if (!isInvisibleMessage) {
         menuItems.push({label: '收藏', action: () => { if (typeof addMessageToFavorites === 'function') addMessageToFavorites(messageId); }});
+        menuItems.push({label: '修复格式', action: () => repairMessageFormat(messageId)});
     }
 
     if (message.novelAiImageUrl) {
@@ -87,6 +88,76 @@ function handleMessageLongPress(messageWrapper, x, y) {
         createContextMenu(menuItems, x, y);
     }
 }
+
+
+async function repairMessageFormat(messageId) {
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!chat || !chat.history) return showToast('找不到当前聊天');
+    const message = chat.history.find(m => m.id === messageId);
+    if (!message) return showToast('找不到消息');
+
+    const roleName = message.role === 'user'
+        ? ((currentChatType === 'private' ? chat.myName : (chat.me && chat.me.nickname)) || '我')
+        : ((currentChatType === 'private' ? (chat.realName || chat.remarkName || chat.name) : chat.name) || '对方');
+
+    let text = String(message.content || '').trim();
+    if (!text) return showToast('这条消息是空的');
+
+    const alreadyFormatted = /^\[.+?[：:].+\]$/.test(text) || text.startsWith('<') || message.forwardRecord || message.isNoReplyStatus;
+    let changed = false;
+
+    // 1. 修复裸露的 NO_REPLY 标记，转成状态卡
+    const noReplyMatch = text.match(/\[?NO_REPLY[:：]([^\]|]+)(?:\|([^\]]*?))?(?:\|([^\]]*?))?\]?/i);
+    if (noReplyMatch) {
+        message.role = 'assistant';
+        message.isNoReplyStatus = true;
+        message.noReplyStatus = (noReplyMatch[1] || '忙碌中').trim();
+        message.noReplyReason = (noReplyMatch[2] || '他暂时没有回复这条消息。').trim();
+        message.noReplyHint = (noReplyMatch[3] || '暂时无法回复').trim();
+        message.content = `[${roleName}暂时不回：${message.noReplyStatus}｜${message.noReplyReason}]`;
+        message.isContextDisabled = true;
+        changed = true;
+    }
+
+    // 2. 修复常见语音裸文本：以“语音:”/“声音:”开头
+    if (!changed && /^(语音|声音|voice)\s*[:：]/i.test(text)) {
+        const body = text.replace(/^(语音|声音|voice)\s*[:：]/i, '').trim();
+        message.content = `[${roleName}的语音：${body}]`;
+        changed = true;
+    }
+
+    // 3. 修复表情包裸文本
+    if (!changed && /^(表情包|sticker)\s*[:：]/i.test(text)) {
+        const body = text.replace(/^(表情包|sticker)\s*[:：]/i, '').trim();
+        message.content = message.role === 'user' ? `[${roleName}发送的表情包：${body}]` : `[${roleName}的表情包：${body}]`;
+        changed = true;
+    }
+
+    // 4. 修复图片/生图/照片视频裸文本
+    if (!changed && /^(照片|图片|视频|生图|photo|image)\s*[:：]/i.test(text)) {
+        const body = text.replace(/^(照片|图片|视频|生图|photo|image)\s*[:：]/i, '').trim();
+        message.content = `[${roleName}发来的照片/视频：${body}]`;
+        changed = true;
+    }
+
+    // 5. 普通角色/用户消息没有标准壳时，包成 [xxx的消息：...]
+    if (!changed && !alreadyFormatted) {
+        // 清掉模型常见的错误外壳/引号，但不碰 HTML
+        text = text.replace(/^["“]|["”]$/g, '').trim();
+        message.content = `[${roleName}的消息：${text}]`;
+        changed = true;
+    }
+
+    if (!changed) {
+        showToast('这条消息看起来不需要修复');
+        return;
+    }
+
+    await saveData();
+    renderMessages(false, true);
+    showToast('已修复消息格式');
+}
+
 
 function startDebugEdit(messageId) {
     exitMultiSelectMode();
