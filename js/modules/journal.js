@@ -23,11 +23,65 @@ function setupMemoryJournalScreen() {
     const batchDeleteBtn = document.getElementById('journal-batch-delete-btn');
     const mergeBtn = document.getElementById('journal-merge-btn');
     const selectCountSpan = document.getElementById('journal-select-count');
+    const journalToolsSheet = document.getElementById('journal-tools-sheet');
+    const autoGenerateBtn = document.getElementById('journal-auto-generate-btn');
+    const manualMemoryBtn = document.getElementById('journal-manual-memory-btn');
+    const manualDiaryBtn = document.getElementById('journal-manual-diary-btn');
+    const searchJournalBtn = document.getElementById('journal-search-btn');
+    const exportJournalBtn = document.getElementById('journal-export-btn');
+    const importJournalBtn = document.getElementById('journal-import-btn');
+    const importJournalInput = document.getElementById('journal-import-input');
 
     let isMultiSelectMode = false;
     let selectedJournalIds = new Set();
 
     // 绑定按钮点击事件
+    if (generateNewJournalBtn) {
+        generateNewJournalBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (journalToolsSheet) {
+                journalToolsSheet.style.display = journalToolsSheet.style.display === 'none' || !journalToolsSheet.style.display ? 'flex' : 'none';
+            }
+        });
+    }
+
+    document.addEventListener('click', (e) => {
+        if (!journalToolsSheet || journalToolsSheet.style.display === 'none') return;
+        if (e.target.closest('#journal-tools-sheet') || e.target.closest('#generate-new-journal-btn')) return;
+        journalToolsSheet.style.display = 'none';
+    });
+
+    if (autoGenerateBtn) autoGenerateBtn.addEventListener('click', () => {
+        if (journalToolsSheet) journalToolsSheet.style.display = 'none';
+        openGenerateJournalModal();
+    });
+
+    if (manualMemoryBtn) manualMemoryBtn.addEventListener('click', async () => {
+        if (journalToolsSheet) journalToolsSheet.style.display = 'none';
+        await manualAddJournal(true);
+    });
+    if (manualDiaryBtn) manualDiaryBtn.addEventListener('click', async () => {
+        if (journalToolsSheet) journalToolsSheet.style.display = 'none';
+        await manualAddJournal(false);
+    });
+    if (searchJournalBtn) searchJournalBtn.addEventListener('click', () => {
+        if (journalToolsSheet) journalToolsSheet.style.display = 'none';
+        searchJournals();
+    });
+    if (exportJournalBtn) exportJournalBtn.addEventListener('click', () => {
+        if (journalToolsSheet) journalToolsSheet.style.display = 'none';
+        exportJournals();
+    });
+    if (importJournalBtn && importJournalInput) importJournalBtn.addEventListener('click', () => {
+        if (journalToolsSheet) journalToolsSheet.style.display = 'none';
+        importJournalInput.value = '';
+        importJournalInput.click();
+    });
+    if (importJournalInput) importJournalInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        importJournals(file);
+    });
+
     if (manageBtn) {
         manageBtn.addEventListener('click', () => {
             toggleMultiSelectMode(true);
@@ -280,11 +334,10 @@ function setupMemoryJournalScreen() {
         journalStyleModal.classList.remove('visible');
         showToast('日记风格设置已保存');
     });
-
-    generateNewJournalBtn.addEventListener('click', () => {
+    function openGenerateJournalModal() {
         const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
         const totalMessages = chat ? chat.history.length : 0;
-        
+
         const rangeInfo = document.getElementById('journal-range-info');
         rangeInfo.textContent = `当前聊天总消息数: ${totalMessages}`;
 
@@ -295,7 +348,7 @@ function setupMemoryJournalScreen() {
 
         generateJournalForm.reset();
         generateJournalModal.classList.add('visible');
-    });
+    }
 
     generateJournalForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -355,7 +408,8 @@ function setupMemoryJournalScreen() {
             journal.isFavorited = !journal.isFavorited;
             await saveData();
             target.closest('.favorite-journal-btn').classList.toggle('favorited', journal.isFavorited);
-            showToast(journal.isFavorited ? '已收藏' : '已取消收藏');
+            showToast(journal.isFavorited ? '已收藏，已置顶' : '已取消收藏');
+            renderJournalList();
             return;
         }
         
@@ -428,13 +482,124 @@ function setupMemoryJournalScreen() {
     });
 }
 
+
+async function manualAddJournal(isMemory) {
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!chat) return showToast('找不到当前聊天');
+    if (!chat.memoryJournals) chat.memoryJournals = [];
+
+    const title = prompt(isMemory ? '输入新记忆标题：' : '输入日记标题：', isMemory ? '手动新记忆' : '手动日记');
+    if (!title) return;
+    const content = prompt(isMemory ? '输入新记忆内容：' : '输入日记内容：', '');
+    if (content === null) return;
+
+    const rangeEnd = chat.history ? chat.history.length : 0;
+    const newJournal = {
+        id: 'manual_journal_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+        title: title.trim(),
+        content: content.trim(),
+        createdAt: Date.now(),
+        range: { start: rangeEnd + 1, end: rangeEnd + 1 },
+        isFavorited: !!isMemory,
+        manual: true,
+        manualType: isMemory ? 'memory' : 'diary'
+    };
+    chat.memoryJournals.push(newJournal);
+    await saveData();
+    renderJournalList();
+    showToast(isMemory ? '新记忆已添加并收藏置顶' : '日记已添加');
+}
+
+function searchJournals() {
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!chat || !chat.memoryJournals) return showToast('暂无日记');
+    const keyword = prompt('输入要搜索的日记关键词：', '');
+    if (!keyword) {
+        renderJournalList();
+        return;
+    }
+    window._journalSearchKeyword = keyword.trim();
+    renderJournalList();
+    showToast('已筛选日记：' + keyword.trim());
+}
+
+function exportJournals() {
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!chat) return showToast('找不到当前聊天');
+    const payload = {
+        type: 'ovo-memory-journals',
+        version: 1,
+        exportedAt: Date.now(),
+        chatType: currentChatType,
+        sourceName: chat.remarkName || chat.realName || chat.name || '回忆日记',
+        journals: JSON.parse(JSON.stringify(chat.memoryJournals || []))
+    };
+    const safeName = String(payload.sourceName || 'journals').replace(/[\\/:*?"<>|]/g, '_').slice(0, 40);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${safeName}-回忆日记-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+    showToast(`已导出 ${(payload.journals || []).length} 篇日记`);
+}
+
+function importJournals(file) {
+    if (!file) return;
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!chat) return showToast('找不到当前聊天');
+
+    const reader = new FileReader();
+    reader.onload = async function() {
+        try {
+            const data = JSON.parse(reader.result);
+            let journals = [];
+            if (Array.isArray(data)) journals = data;
+            else if (data && Array.isArray(data.journals)) journals = data.journals;
+            else if (data && Array.isArray(data.memoryJournals)) journals = data.memoryJournals;
+            else throw new Error('文件里没有 journals 数组');
+
+            journals = JSON.parse(JSON.stringify(journals)).map((j, idx) => {
+                if (!j.id) j.id = 'imported_journal_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 8);
+                if (!j.createdAt) j.createdAt = Date.now() + idx;
+                if (!j.range) j.range = { start: 0, end: 0 };
+                return j;
+            });
+
+            const mode = (chat.memoryJournals && chat.memoryJournals.length)
+                ? prompt('当前已有日记。输入 1 覆盖，输入 2 追加：', '2')
+                : '1';
+            if (mode !== '1' && mode !== '2') return;
+
+            if (mode === '2') chat.memoryJournals = (chat.memoryJournals || []).concat(journals);
+            else chat.memoryJournals = journals;
+
+            await saveData();
+            renderJournalList();
+            showToast(`已导入 ${journals.length} 篇日记`);
+        } catch (err) {
+            console.error('导入日记失败:', err);
+            showToast('导入失败：' + (err.message || '文件格式不对'));
+        }
+    };
+    reader.readAsText(file, 'utf-8');
+}
+
+
 function renderJournalList() {
     const container = document.getElementById('journal-list-container');
     const placeholder = document.getElementById('no-journals-placeholder');
     container.innerHTML = '';
 
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-    const journals = chat ? chat.memoryJournals : [];
+    let journals = chat ? (chat.memoryJournals || []) : [];
+    const searchKeyword = window._journalSearchKeyword || '';
+    if (searchKeyword) {
+        const kw = String(searchKeyword).toLowerCase();
+        journals = journals.filter(j => String(j.title || '').toLowerCase().includes(kw) || String(j.content || '').toLowerCase().includes(kw));
+    }
 
     // 更新标题和按钮显示
     const bindBtn = document.getElementById('bind-journal-worldbook-btn');
@@ -475,7 +640,10 @@ function renderJournalList() {
 
     if (placeholder) placeholder.style.display = 'none';
 
-    const sortedJournals = [...journals].sort((a, b) => a.createdAt - b.createdAt);
+    const sortedJournals = [...journals].sort((a, b) => {
+        if (!!a.isFavorited !== !!b.isFavorited) return a.isFavorited ? -1 : 1;
+        return (a.createdAt || 0) - (b.createdAt || 0);
+    });
 
     sortedJournals.forEach(journal => {
         const card = document.createElement('li');

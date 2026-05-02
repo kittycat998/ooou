@@ -277,3 +277,32 @@
     width: 22px;
     height: 22px;
 }
+
+
+/* 回忆日记功能栏 */
+.journal-tools-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1200;
+    background: rgba(255,255,255,0.98);
+    border-radius: 22px 22px 0 0;
+    padding: 18px 18px 26px;
+    box-shadow: 0 -14px 40px rgba(0,0,0,0.18);
+    flex-direction: column;
+    gap: 12px;
+}
+.journal-tools-sheet button {
+    border: none;
+    background: #f4f4f4;
+    border-radius: 14px;
+    padding: 15px 12px;
+    font-size: 16px;
+    font-weight: 750;
+    color: #222;
+}
+.journal-tools-sheet button:active {
+    transform: scale(0.99);
+    background: #eaeaea;
+}
