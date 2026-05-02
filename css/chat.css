@@ -2614,3 +2614,97 @@
 }
 
 
+
+
+/* 多选聊天记录截图卡片 */
+.capture-card-render {
+    box-sizing: border-box;
+    color: #222;
+}
+.capture-card-header {
+    background: #fff;
+    padding: 24px 22px 18px;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.capture-title {
+    font-size: 20px;
+    line-height: 1.35;
+    font-weight: 850;
+    color: #111;
+    word-break: break-word;
+}
+.capture-subtitle {
+    margin-top: 16px;
+    font-size: 17px;
+    color: #8f8f93;
+    font-weight: 650;
+}
+.capture-label {
+    margin-top: 14px;
+    text-align: center;
+    font-size: 14px;
+    color: #8f8f93;
+    font-weight: 650;
+}
+.capture-card-body {
+    padding: 18px 16px 22px;
+    background: #eef0f4;
+}
+.capture-message-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 0 0 16px;
+}
+.capture-message-row.sent {
+    justify-content: flex-end;
+}
+.capture-message-row.received {
+    justify-content: flex-start;
+}
+.capture-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex: 0 0 auto;
+    background: #fff;
+}
+.capture-bubble {
+    max-width: 235px;
+    min-height: 22px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: 17px;
+    line-height: 1.42;
+    word-break: break-word;
+    white-space: pre-wrap;
+    box-sizing: border-box;
+}
+.capture-bubble.received {
+    background: #fff;
+    color: #555;
+    border-bottom-left-radius: 4px;
+}
+.capture-bubble.sent {
+    background: #bfe3ff;
+    color: #333;
+    border-bottom-right-radius: 4px;
+}
+.capture-image {
+    max-width: 180px;
+    border-radius: 10px;
+    display: block;
+    padding: 0;
+}
+.capture-bubble:has(.capture-image) {
+    padding: 0;
+    background: transparent;
+}
+.capture-time {
+    color: #9a9a9e;
+    font-size: 13px;
+    align-self: center;
+    padding-top: 2px;
+    flex: 0 0 auto;
+}
