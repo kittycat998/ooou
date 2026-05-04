@@ -51,7 +51,8 @@ function handleMessageLongPress(messageWrapper, x, y) {
         menuItems.push({label: '修复格式', action: () => repairMessageFormat(messageId)});
     }
 
-    if (message.novelAiImageUrl) {
+    const hasGeneratedImage = !!(message.novelAiImageUrl || message.generatedImageId);
+    if (hasGeneratedImage) {
         menuItems.push({
             label: '重roll生图',
             action: () => {
@@ -661,7 +662,7 @@ function _captureExtractDisplayText(msg) {
     if ((m = content.match(/\[.*?引用[“"]([\s\S]*?)["”]并回复[：:]([\s\S]+?)\]/))) return '回复：' + m[2].trim();
     if ((m = content.match(/\[.*?的语音[：:]([\s\S]+?)\]/))) return '🎙 ' + m[1].trim();
     if (/\[.*?的表情包[：:].*?\]|\[.*?发送的表情包[：:].*?\]/.test(content)) return '[表情包]';
-    if (/\[.*?发来的照片\/视频[：:].*?\]/.test(content)) return msg.novelAiImageUrl ? '[图片]' : '[照片/视频]';
+    if (/\[.*?发来的照片\/视频[：:].*?\]/.test(content)) return (msg.novelAiImageUrl || msg.generatedImageId) ? '[图片]' : '[照片/视频]';
     if (/\[.*?(?:给你转账|的转账|向.*?转账)[：:].*?\]/.test(content)) return '[转账]';
     if (/\[.*?送来的礼物[：:].*?\]|\[.*?向.*?送来了礼物[：:].*?\]/.test(content)) return '[礼物]';
     if (/\[system[:：].*?\]|\[system-display[:：].*?\]/.test(content)) return content.replace(/^\[|\]$/g, '');
@@ -673,7 +674,7 @@ function _captureFormatTime(ts) {
     return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
-function _captureBuildBubble(row, msg, chat) {
+async function _captureBuildBubble(row, msg, chat) {
     const info = _captureGetSenderInfo(chat, msg);
     const avatar = document.createElement('img');
     avatar.className = 'capture-avatar';
@@ -683,10 +684,19 @@ function _captureBuildBubble(row, msg, chat) {
     const bubble = document.createElement('div');
     bubble.className = 'capture-bubble ' + (info.isUser ? 'sent' : 'received');
 
-    if (msg.novelAiImageUrl) {
+    let resolvedImageUrl = '';
+    if ((msg.novelAiImageUrl || msg.generatedImageId) && typeof window.resolveGeneratedMessageImageUrl === 'function') {
+        try {
+            resolvedImageUrl = await window.resolveGeneratedMessageImageUrl(msg);
+        } catch (e) {
+            console.warn('[Capture] 解析图片失败:', e);
+        }
+    }
+
+    if (resolvedImageUrl) {
         const img = document.createElement('img');
         img.className = 'capture-image';
-        img.src = msg.novelAiImageUrl;
+        img.src = resolvedImageUrl;
         img.crossOrigin = 'anonymous';
         bubble.appendChild(img);
     } else {
@@ -747,11 +757,11 @@ async function generateCapture() {
 
     const body = document.createElement('div');
     body.className = 'capture-card-body';
-    sortedMessages.forEach(msg => {
+    for (const msg of sortedMessages) {
         const row = document.createElement('div');
-        _captureBuildBubble(row, msg, chat);
+        await _captureBuildBubble(row, msg, chat);
         body.appendChild(row);
-    });
+    }
     tempContainer.appendChild(body);
 
     document.body.appendChild(tempContainer);
@@ -870,6 +880,9 @@ function _forwardRecordCloneMessage(msg, chat) {
         textForAI: _forwardRecordReadableLine(msg, chat),
         timestamp: msg.timestamp || Date.now(),
         novelAiImageUrl: msg.novelAiImageUrl || '',
+        generatedImageId: msg.generatedImageId || '',
+        generatedImageProvider: msg.generatedImageProvider || '',
+        novelAiPrompt: msg.novelAiPrompt || '',
         stickerName: stickerInfo ? stickerInfo.name : '',
         stickerData: stickerInfo ? stickerInfo.data : '',
         parts: msg.parts ? JSON.parse(JSON.stringify(msg.parts)) : undefined

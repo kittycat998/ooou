@@ -1665,6 +1665,104 @@ async function saveSettingsFromSidebar() {
 }
 
 function setupApiSettingsApp() {
+    function _setApiSelectValue(selectEl, value, emptyText) {
+        if (!selectEl) return;
+        const v = value || '';
+        if (v) {
+            const exists = Array.from(selectEl.options || []).some(o => o.value === v);
+            if (!exists) selectEl.innerHTML = `<option value="${v}">${v}</option>`;
+            selectEl.value = v;
+        } else if (!selectEl.options || selectEl.options.length === 0) {
+            selectEl.innerHTML = `<option value="">${emptyText || '请先拉取模型'}</option>`;
+        }
+    }
+
+    window.refreshSubApiSettingsUI = function(prefix, dbKey, presetsKey) {
+        const providerEl = document.getElementById(`${prefix}-api-provider`);
+        const urlEl = document.getElementById(`${prefix}-api-url`);
+        const keyEl = document.getElementById(`${prefix}-api-key`);
+        const modelEl = document.getElementById(`${prefix}-api-model`);
+        const s = db[dbKey] || {};
+        if (providerEl) providerEl.value = s.provider || 'newapi';
+        if (urlEl) urlEl.value = s.url || s.apiUrl || '';
+        if (keyEl) keyEl.value = s.key || s.apiKey || '';
+        _setApiSelectValue(modelEl, s.model || '', '请先拉取模型');
+        if (typeof populateSubApiPresetSelect === 'function') populateSubApiPresetSelect(prefix, presetsKey);
+    };
+
+    window.refreshNovelAiSettingsUI = function() {
+        const s = db.novelAiSettings || {};
+        const enabledEl = document.getElementById('novelai-enabled');
+        const tokenEl = document.getElementById('novelai-token');
+        const endpointModeEl = document.getElementById('novelai-endpoint-mode');
+        const customEndpointEl = document.getElementById('novelai-custom-endpoint');
+        const customEndpointRow = document.getElementById('novelai-custom-endpoint-row');
+        const modelEl = document.getElementById('novelai-model');
+        const resolutionEl = document.getElementById('novelai-resolution');
+        const samplerEl = document.getElementById('novelai-sampler');
+        const stepsSlider = document.getElementById('novelai-steps');
+        const stepsValue = document.getElementById('novelai-steps-value');
+        const scaleSlider = document.getElementById('novelai-scale');
+        const scaleValue = document.getElementById('novelai-scale-value');
+        const systemPromptEl = document.getElementById('novelai-system-prompt');
+        const artistTagsEl = document.getElementById('novelai-artist-tags');
+        const negativePromptEl = document.getElementById('novelai-negative-prompt');
+        if (enabledEl) enabledEl.checked = !!s.enabled;
+        if (tokenEl) tokenEl.value = s.token || '';
+        if (endpointModeEl) endpointModeEl.value = s.endpointMode || (s.customEndpoint ? 'custom' : 'official');
+        if (customEndpointEl) customEndpointEl.value = s.customEndpoint || '';
+        if (customEndpointRow) customEndpointRow.style.display = (endpointModeEl && endpointModeEl.value === 'custom') ? 'flex' : 'none';
+        if (modelEl && s.model) modelEl.value = s.model;
+        if (resolutionEl && s.resolution) resolutionEl.value = s.resolution;
+        if (samplerEl && s.sampler) samplerEl.value = s.sampler;
+        if (stepsSlider) stepsSlider.value = s.steps || 28;
+        if (stepsValue) stepsValue.textContent = stepsSlider ? stepsSlider.value : (s.steps || 28);
+        if (scaleSlider) scaleSlider.value = s.scale || 5;
+        if (scaleValue) scaleValue.textContent = scaleSlider ? scaleSlider.value : (s.scale || 5);
+        if (systemPromptEl) systemPromptEl.value = s.systemPrompt || '';
+        if (artistTagsEl) artistTagsEl.value = s.artistTags || '';
+        if (negativePromptEl) negativePromptEl.value = s.negativePrompt || '';
+    };
+
+    window.refreshGptImageSettingsUI = function() {
+        const s = db.gptImageSettings || {};
+        const enabledEl = document.getElementById('gpt-image-enabled');
+        const apiKeyEl = document.getElementById('gpt-image-api-key');
+        const endpointModeEl = document.getElementById('gpt-image-endpoint-mode');
+        const customEndpointEl = document.getElementById('gpt-image-custom-endpoint');
+        const customEndpointRow = document.getElementById('gpt-image-custom-endpoint-row');
+        const modelEl = document.getElementById('gpt-image-model');
+        const sizeEl = document.getElementById('gpt-image-size');
+        const qualityEl = document.getElementById('gpt-image-quality');
+        const positivePromptEl = document.getElementById('gpt-image-positive-prompt');
+        const negativePromptEl = document.getElementById('gpt-image-negative-prompt');
+        const providerEl = document.getElementById('image-generation-provider');
+        if (enabledEl) enabledEl.checked = !!s.enabled;
+        if (apiKeyEl) apiKeyEl.value = s.apiKey || '';
+        if (endpointModeEl) endpointModeEl.value = s.endpointMode || (s.customEndpoint ? 'custom' : 'official');
+        if (customEndpointEl) customEndpointEl.value = s.customEndpoint || '';
+        if (customEndpointRow) customEndpointRow.style.display = (endpointModeEl && endpointModeEl.value === 'custom') ? 'flex' : 'none';
+        if (modelEl) modelEl.value = s.model || 'gpt-image-1';
+        if (sizeEl) sizeEl.value = s.size || '1024x1024';
+        if (qualityEl) qualityEl.value = s.quality || 'auto';
+        if (positivePromptEl) positivePromptEl.value = s.positivePrompt || '';
+        if (negativePromptEl) negativePromptEl.value = s.negativePrompt || '';
+        if (providerEl) providerEl.value = db.imageGenerationProvider || 'novelai';
+    };
+
+    window.refreshAllApiSettingsUI = function() {
+        if (typeof window.refreshMainApiSettingsUI === 'function') window.refreshMainApiSettingsUI();
+        if (typeof window.refreshSubApiSettingsUI === 'function') {
+            window.refreshSubApiSettingsUI('summary', 'summaryApiSettings', 'summaryApiPresets');
+            window.refreshSubApiSettingsUI('background', 'backgroundApiSettings', 'backgroundApiPresets');
+            window.refreshSubApiSettingsUI('supplementPersona', 'supplementPersonaApiSettings', 'supplementPersonaApiPresets');
+            window.refreshSubApiSettingsUI('peek', 'peekApiSettings', 'peekApiPresets');
+        }
+        if (typeof window.refreshNovelAiSettingsUI === 'function') window.refreshNovelAiSettingsUI();
+        if (typeof window.refreshGptImageSettingsUI === 'function') window.refreshGptImageSettingsUI();
+    };
+
+    
     window.refreshMainApiSettingsUI = function() {
         const modelEl = document.getElementById('api-model');
         const providerEl = document.getElementById('api-provider');
@@ -1848,6 +1946,9 @@ function setupApiSettingsApp() {
 
     // === NovelAI 生图 API 设置 ===
     setupNovelAiSettings();
+
+    // === GPT / OpenAI 生图 API 设置 ===
+    setupGptImageSettings();
 }
 
 // --- 预设管理 ---
@@ -1979,14 +2080,66 @@ function openApiManageModal() {
     modal.style.display = 'flex';
 }
 
+function _collectAllApiExportData() {
+    const apiSettingKeys = [
+        'apiSettings',
+        'summaryApiSettings',
+        'backgroundApiSettings',
+        'supplementPersonaApiSettings',
+        'peekApiSettings',
+        'forumApiSettings',
+        'theaterApiSettings',
+        'novelAiSettings',
+        'gptImageSettings',
+        'imageGenerationProvider'
+    ];
+    const apiPresetKeys = [
+        'apiPresets',
+        'summaryApiPresets',
+        'backgroundApiPresets',
+        'supplementPersonaApiPresets',
+        'peekApiPresets'
+    ];
+    const out = {
+        _type: 'ovo_all_api_presets',
+        _version: 2,
+        _exportTimestamp: Date.now(),
+        settings: {},
+        presets: {}
+    };
+    apiSettingKeys.forEach(k => {
+        if (db[k] !== undefined) {
+            try { out.settings[k] = JSON.parse(JSON.stringify(db[k])); }
+            catch (e) { out.settings[k] = db[k]; }
+        }
+    });
+    apiPresetKeys.forEach(k => {
+        if (db[k] !== undefined) {
+            try { out.presets[k] = JSON.parse(JSON.stringify(db[k])); }
+            catch (e) { out.presets[k] = db[k]; }
+        }
+    });
+    return out;
+}
+
 function exportApiPresets() {
-    const presets = _getApiPresets();
-    const blob = new Blob([JSON.stringify(presets, null, 2)], {type: 'application/json'});
+    const payload = _collectAllApiExportData();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'api_presets.json'; document.body.appendChild(a); a.click(); a.remove();
+    a.href = url; a.download = 'all_api_presets_and_settings.json'; document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
 }
+
+function _normalizeImportedApiObj(obj) {
+    obj = obj && typeof obj === 'object' ? obj : {};
+    if (obj.apiUrl && !obj.url) obj.url = obj.apiUrl;
+    if (obj.url && !obj.apiUrl) obj.apiUrl = obj.url;
+    if (obj.apiKey && !obj.key) obj.key = obj.apiKey;
+    if (obj.key && !obj.apiKey) obj.apiKey = obj.key;
+    return obj;
+}
+
 function importApiPresets() {
     const inp = document.createElement('input');
     inp.type = 'file';
@@ -1995,7 +2148,44 @@ function importApiPresets() {
         const f = e.target.files[0];
         if (!f) return;
         const r = new FileReader();
-        r.onload = function(){ try { const data = JSON.parse(r.result); if (Array.isArray(data)) { _saveApiPresets(data); populateApiSelect(); openApiManageModal(); } else alert('文件格式不正确'); } catch(e){ alert('导入失败：'+e.message); } };
+        r.onload = async function(){
+            try {
+                const data = JSON.parse(r.result);
+
+                // 兼容旧版：旧文件只是主 API 预设数组
+                if (Array.isArray(data)) {
+                    _saveApiPresets(data);
+                    populateApiSelect();
+                    openApiManageModal();
+                    showToast('已导入主 API 预设');
+                    return;
+                }
+
+                // 新版：同时导入主 API、副 API、生图 API 设置和各类预设
+                if (data && data._type === 'ovo_all_api_presets') {
+                    const settingsMap = data.settings || {};
+                    Object.keys(settingsMap).forEach(k => {
+                        db[k] = (k === 'imageGenerationProvider') ? settingsMap[k] : _normalizeImportedApiObj(settingsMap[k]);
+                    });
+
+                    const presetsMap = data.presets || {};
+                    Object.keys(presetsMap).forEach(k => {
+                        db[k] = Array.isArray(presetsMap[k]) ? presetsMap[k] : [];
+                        db[k].forEach(p => { if (p && p.data) p.data = _normalizeImportedApiObj(p.data); });
+                    });
+
+                    await saveData();
+                    populateApiSelect();
+                    openApiManageModal();
+                    showToast('已导入全部 API 设置和预设');
+                    return;
+                }
+
+                alert('文件格式不正确');
+            } catch(e){
+                alert('导入失败：'+e.message);
+            }
+        };
         r.readAsText(f);
     };
     inp.click();
@@ -2451,6 +2641,113 @@ function setupNovelAiSettings() {
                 }
             } catch (err) {
                 console.error('[NovelAI] 测试生图失败:', err);
+                showToast('❌ 生图失败: ' + (err.message || '未知错误'));
+            } finally {
+                testBtn.disabled = false;
+                testBtn.querySelector('.btn-text').textContent = '🎨 测试生图';
+            }
+        });
+    }
+}
+
+
+// === GPT / OpenAI 生图 API 设置 ===
+function setupGptImageSettings() {
+    const enabledEl = document.getElementById('gpt-image-enabled');
+    const apiKeyEl = document.getElementById('gpt-image-api-key');
+    const endpointModeEl = document.getElementById('gpt-image-endpoint-mode');
+    const customEndpointEl = document.getElementById('gpt-image-custom-endpoint');
+    const customEndpointRow = document.getElementById('gpt-image-custom-endpoint-row');
+    const modelEl = document.getElementById('gpt-image-model');
+    const sizeEl = document.getElementById('gpt-image-size');
+    const qualityEl = document.getElementById('gpt-image-quality');
+    const positivePromptEl = document.getElementById('gpt-image-positive-prompt');
+    const negativePromptEl = document.getElementById('gpt-image-negative-prompt');
+    const providerEl = document.getElementById('image-generation-provider');
+    const saveBtn = document.getElementById('gpt-image-save-btn');
+    const testBtn = document.getElementById('gpt-image-test-btn');
+
+    if (db.gptImageSettings) {
+        const s = db.gptImageSettings;
+        if (enabledEl) enabledEl.checked = !!s.enabled;
+        if (apiKeyEl) apiKeyEl.value = s.apiKey || '';
+        if (endpointModeEl) endpointModeEl.value = s.endpointMode || (s.customEndpoint ? 'custom' : 'official');
+        if (customEndpointEl) customEndpointEl.value = s.customEndpoint || '';
+        if (customEndpointRow) customEndpointRow.style.display = (endpointModeEl && endpointModeEl.value === 'custom') ? 'flex' : 'none';
+        if (modelEl) modelEl.value = s.model || 'gpt-image-1';
+        if (sizeEl) sizeEl.value = s.size || '1024x1024';
+        if (qualityEl) qualityEl.value = s.quality || 'auto';
+        if (positivePromptEl) positivePromptEl.value = s.positivePrompt || '';
+        if (negativePromptEl) negativePromptEl.value = s.negativePrompt || '';
+    } else {
+        if (modelEl) modelEl.value = 'gpt-image-1';
+    }
+    if (providerEl) providerEl.value = db.imageGenerationProvider || 'novelai';
+
+    if (endpointModeEl && customEndpointRow) {
+        endpointModeEl.addEventListener('change', () => {
+            customEndpointRow.style.display = endpointModeEl.value === 'custom' ? 'flex' : 'none';
+        });
+    }
+
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+            db.gptImageSettings = {
+                enabled: enabledEl ? enabledEl.checked : false,
+                apiKey: apiKeyEl ? apiKeyEl.value.trim() : '',
+                endpointMode: endpointModeEl ? endpointModeEl.value : 'official',
+                customEndpoint: customEndpointEl ? customEndpointEl.value.trim() : '',
+                model: modelEl ? modelEl.value.trim() || 'gpt-image-1' : 'gpt-image-1',
+                size: sizeEl ? sizeEl.value : '1024x1024',
+                quality: qualityEl ? qualityEl.value : 'auto',
+                positivePrompt: positivePromptEl ? positivePromptEl.value.trim() : '',
+                negativePrompt: negativePromptEl ? negativePromptEl.value.trim() : ''
+            };
+            if (providerEl) db.imageGenerationProvider = providerEl.value || 'novelai';
+            await saveData();
+            showToast('GPT 生图设置已保存！');
+        });
+    }
+
+    if (providerEl) {
+        providerEl.addEventListener('change', async () => {
+            db.imageGenerationProvider = providerEl.value || 'novelai';
+            await saveData();
+        });
+    }
+
+    if (testBtn) {
+        testBtn.addEventListener('click', async () => {
+            const apiKey = apiKeyEl ? apiKeyEl.value.trim() : '';
+            if (!apiKey) {
+                showToast('请先填写 GPT / OpenAI API 密钥');
+                return;
+            }
+
+            testBtn.disabled = true;
+            testBtn.querySelector('.btn-text').textContent = '⏳ 生成中...';
+            try {
+                const result = await generateGptImage('A cute semi-realistic portrait of a young person, soft lighting, upper body', {
+                    apiKey: apiKey,
+                    endpointMode: endpointModeEl ? endpointModeEl.value : 'official',
+                    customEndpoint: customEndpointEl ? customEndpointEl.value.trim() : '',
+                    model: modelEl ? modelEl.value.trim() || 'gpt-image-1' : 'gpt-image-1',
+                    size: sizeEl ? sizeEl.value : '1024x1024',
+                    quality: qualityEl ? qualityEl.value : 'auto',
+                    positivePrompt: positivePromptEl ? positivePromptEl.value.trim() : '',
+                    negativePrompt: negativePromptEl ? negativePromptEl.value.trim() : ''
+                });
+                if (result && result.imageUrl) {
+                    const preview = document.getElementById('gpt-image-test-preview');
+                    const img = document.getElementById('gpt-image-test-image');
+                    if (preview && img) {
+                        img.src = result.imageUrl;
+                        preview.style.display = 'block';
+                    }
+                    showToast('✅ GPT 测试生图成功！');
+                }
+            } catch (err) {
+                console.error('[GPT Image] 测试生图失败:', err);
                 showToast('❌ 生图失败: ' + (err.message || '未知错误'));
             } finally {
                 testBtn.disabled = false;
@@ -5759,9 +6056,10 @@ function recalculateChatStatus(chat) {
     window.__apiRefreshSwitchPatchApplied = true;
 
     const runRefresh = () => {
-        if (typeof window.refreshMainApiSettingsUI === 'function') {
-            setTimeout(() => window.refreshMainApiSettingsUI(), 30);
-            setTimeout(() => window.refreshMainApiSettingsUI(), 180);
+        const fn = window.refreshAllApiSettingsUI || window.refreshMainApiSettingsUI;
+        if (typeof fn === 'function') {
+            setTimeout(() => fn(), 30);
+            setTimeout(() => fn(), 180);
         }
     };
 

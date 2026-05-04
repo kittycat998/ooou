@@ -299,6 +299,10 @@
             </div>
         `;
         mount.appendChild(panel);
+        panel.addEventListener('click', (e) => {
+            // 保活面板内点击不要冒泡到全局页面切换监听，避免授权/测试通知后跳回主界面
+            e.stopPropagation();
+        });
 
         statusEl = panel.querySelector('#ovo-keepalive-status');
         const enabled = panel.querySelector('#ovo-keepalive-enabled');
@@ -323,8 +327,14 @@
             updateStatus();
         });
 
-        panel.querySelector('#ovo-keepalive-permission').addEventListener('click', requestNotifyPermission);
-        panel.querySelector('#ovo-keepalive-test').addEventListener('click', async () => {
+        panel.querySelector('#ovo-keepalive-permission').addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            await requestNotifyPermission();
+        });
+        panel.querySelector('#ovo-keepalive-test').addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             const ok = await showSystemNotification('OVO 后台保活', '这是一条测试通知');
             toast(ok ? '测试通知已发送' : '通知发送失败，请检查权限', ok ? 'success' : 'warning');
         });

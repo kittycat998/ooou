@@ -490,7 +490,7 @@ function renderTutorialContent() {
             URL.revokeObjectURL(url);
             loadingBtn = false
             showToast('聊天记录导出成功');
-            if (typeof window.refreshMainApiSettingsUI === 'function') window.refreshMainApiSettingsUI();
+            if (typeof window.refreshAllApiSettingsUI === 'function') window.refreshAllApiSettingsUI(); else if (typeof window.refreshMainApiSettingsUI === 'function') window.refreshMainApiSettingsUI();
         }catch (e){
             loadingBtn = false
             showToast(`导出失败, 发生错误: ${e.message}`);
@@ -1695,11 +1695,39 @@ async function importPartialBackupData(data) {
 }
 
 
+const ALL_API_SETTING_KEYS = [
+    'apiSettings',
+    'summaryApiSettings',
+    'backgroundApiSettings',
+    'supplementPersonaApiSettings',
+    'peekApiSettings',
+    'forumApiSettings',
+    'theaterApiSettings',
+    'novelAiSettings',
+    'gptImageSettings',
+    'imageGenerationProvider'
+];
+
+const ALL_API_PRESET_KEYS = [
+    'apiPresets',
+    'summaryApiPresets',
+    'backgroundApiPresets',
+    'supplementPersonaApiPresets',
+    'peekApiPresets'
+];
+
+function _normalizeApiLikeObject(obj) {
+    obj = obj && typeof obj === 'object' ? obj : {};
+    if (obj.apiUrl && !obj.url) obj.url = obj.apiUrl;
+    if (obj.url && !obj.apiUrl) obj.apiUrl = obj.url;
+    if (obj.apiKey && !obj.key) obj.key = obj.apiKey;
+    if (obj.key && !obj.apiKey) obj.apiKey = obj.key;
+    return obj;
+}
+
 function _repairApiDataAfterImport() {
     const normalizeMain = (obj) => {
-        obj = obj && typeof obj === 'object' ? obj : {};
-        if (obj.apiUrl && !obj.url) obj.url = obj.apiUrl;
-        if (obj.apiKey && !obj.key) obj.key = obj.apiKey;
+        obj = _normalizeApiLikeObject(obj);
         if (!obj.provider) obj.provider = 'newapi';
         if (typeof obj.streamEnabled === 'undefined') obj.streamEnabled = true;
         if (typeof obj.timePerceptionEnabled === 'undefined') obj.timePerceptionEnabled = false;
@@ -1707,21 +1735,25 @@ function _repairApiDataAfterImport() {
         return obj;
     };
     db.apiSettings = normalizeMain(db.apiSettings);
-    ['summaryApiSettings','backgroundApiSettings','supplementPersonaApiSettings','peekApiSettings','forumApiSettings','theaterApiSettings','novelAiSettings'].forEach(k => {
+
+    ALL_API_SETTING_KEYS.forEach(k => {
+        if (k === 'apiSettings' || k === 'imageGenerationProvider') return;
         if (!db[k] || typeof db[k] !== 'object') db[k] = {};
-        if (db[k].apiUrl && !db[k].url) db[k].url = db[k].apiUrl;
-        if (db[k].apiKey && !db[k].key) db[k].key = db[k].apiKey;
+        db[k] = _normalizeApiLikeObject(db[k]);
     });
-    ['apiPresets','summaryApiPresets','backgroundApiPresets','supplementPersonaApiPresets','peekApiPresets'].forEach(k => {
+
+    ALL_API_PRESET_KEYS.forEach(k => {
         if (!Array.isArray(db[k])) db[k] = [];
         db[k].forEach(p => {
             if (!p.data) return;
-            if (p.data.apiUrl && !p.data.url) p.data.url = p.data.apiUrl;
-            if (p.data.url && !p.data.apiUrl) p.data.apiUrl = p.data.url;
-            if (p.data.apiKey && !p.data.key) p.data.key = p.data.apiKey;
-            if (p.data.key && !p.data.apiKey) p.data.apiKey = p.data.key;
+            p.data = _normalizeApiLikeObject(p.data);
         });
     });
+
+    if (!db.gptImageSettings || typeof db.gptImageSettings !== 'object') {
+        db.gptImageSettings = { enabled: false, apiKey: '', endpointMode: 'official', customEndpoint: '', model: 'gpt-image-1', size: '1024x1024', quality: 'auto', positivePrompt: '', negativePrompt: '' };
+    }
+    if (!db.imageGenerationProvider) db.imageGenerationProvider = 'novelai';
 }
 
 

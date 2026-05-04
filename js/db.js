@@ -169,7 +169,7 @@ const globalSettingKeys = [
     'theaterScenarios', 'theaterPromptPresets',
     'theaterHtmlScenarios', 'theaterHtmlPromptPresets', 'theaterMode',
     'theaterApiSettings', 'theaterFontSize', 'theaterFontPreset',
-    'novelAiSettings', 'avatarRecognitionDetailLevel',
+    'novelAiSettings', 'gptImageSettings', 'imageGenerationProvider', 'avatarRecognitionDetailLevel',
     'phoneControlRecycleBin'
 ];
 if (typeof window !== 'undefined') window.globalSettingKeysForBackup = globalSettingKeys;
@@ -734,6 +734,15 @@ function initDatabase() {
         globalSettings: 'key',
         archives: '&id,characterId,timestamp'
     });
+    dexieDB.version(4).stores({
+        characters: '&id',
+        groups: '&id',
+        worldBooks: '&id',
+        myStickers: '&id',
+        globalSettings: 'key',
+        archives: '&id,characterId,timestamp',
+        generatedImages: '&id,messageId,createdAt'
+    });
 }
 
 // 数据保存与加载
@@ -846,7 +855,9 @@ const loadData = async () => {
             theaterApiSettings: { useTheaterApi: false, url: '', key: '', model: '' },
             theaterFontSize: 15,
             theaterFontPreset: null,
-            avatarRecognitionDetailLevel: 'detailed'
+            avatarRecognitionDetailLevel: 'detailed',
+            gptImageSettings: { enabled: false, apiKey: '', endpointMode: 'official', customEndpoint: '', model: 'gpt-image-1', size: '1024x1024', quality: 'auto', positivePrompt: '', negativePrompt: '' },
+            imageGenerationProvider: 'novelai'
         };
         db[key] = settings[key] !== undefined ? settings[key] : (defaultValue[key] !== undefined ? JSON.parse(JSON.stringify(defaultValue[key])) : undefined);
     });
