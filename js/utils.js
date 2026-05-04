@@ -1232,7 +1232,7 @@ async function generateGptImage(prompt, overrideSettings = {}) {
     };
 
     if (quality && quality !== 'auto') body.quality = quality;
-    if (/gpt-image|dall-e/i.test(model)) body.response_format = 'b64_json';
+    // 不强制 response_format=b64_json。很多第三方/反代会返回 URL；强制 base64 会让本地数据库暴涨甚至保存失败。
 
     console.log('[GPT Image] 发送生图请求:', { apiUrl, model, size: body.size, quality: body.quality || 'auto' });
 

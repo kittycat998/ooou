@@ -64,6 +64,72 @@ function _renderNovelAiImageBubbleContent(imageUrl, messageId) {
     return `<img src="${safeUrl}" onclick="openImageViewer(this.src)" style="cursor: zoom-in; max-width: 280px; border-radius: 12px;">`;
 }
 
+function _isHugeDataUrl(url) {
+    return typeof url === 'string' && url.startsWith('data:image') && url.length > 1800000;
+}
+
+function _compressDataUrlForHistory(dataUrl, maxSide = 1024, quality = 0.82) {
+    return new Promise((resolve) => {
+        if (!dataUrl || !String(dataUrl).startsWith('data:image')) return resolve(dataUrl);
+        const img = new Image();
+        img.onload = () => {
+            try {
+                let { width, height } = img;
+                const scale = Math.min(1, maxSide / Math.max(width, height));
+                width = Math.max(1, Math.round(width * scale));
+                height = Math.max(1, Math.round(height * scale));
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                const out = canvas.toDataURL('image/jpeg', quality);
+                resolve(out && out.length < dataUrl.length ? out : dataUrl);
+            } catch (e) {
+                console.warn('[Image Auto] 压缩生成图失败:', e);
+                resolve(dataUrl);
+            }
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+    });
+}
+
+async function _prepareGeneratedImageForHistory(imageUrl) {
+    if (!imageUrl) return '';
+    if (!String(imageUrl).startsWith('data:image')) return imageUrl;
+    const compressed = await _compressDataUrlForHistory(imageUrl);
+    if (_isHugeDataUrl(compressed)) {
+        console.warn('[Image Auto] 生成图过大，不写入历史，避免数据库保存失败。');
+        if (typeof showToast === 'function') showToast('生成图过大，仅本次显示，未写入聊天记录', 'warning');
+        return '';
+    }
+    return compressed;
+}
+
+async function _safeSaveGeneratedMessageImage(message, imageUrl, prompt, provider) {
+    if (!message) return;
+    const storableUrl = await _prepareGeneratedImageForHistory(imageUrl);
+    if (storableUrl) {
+        message.novelAiImageUrl = storableUrl;
+        message.novelAiPrompt = prompt;
+        message.generatedImageProvider = provider;
+    } else {
+        message.novelAiImageUrl = '';
+        message.novelAiPrompt = prompt;
+        message.generatedImageProvider = provider;
+    }
+    try {
+        await saveData();
+    } catch (e) {
+        console.error('[Image Auto] 保存生成图失败，已回退不保存图片:', e);
+        message.novelAiImageUrl = '';
+        try { await saveData(); } catch (e2) { console.error('[Image Auto] 回退保存仍失败:', e2); }
+        if (typeof showToast === 'function') showToast('图片太大导致保存失败，已保留文字消息', 'warning');
+    }
+}
+
+
 async function rerollNovelAiImage(messageId) {
     const found = _findCurrentRenderMessage(messageId);
     if (!found) {
@@ -89,10 +155,7 @@ async function rerollNovelAiImage(messageId) {
         }
         const result = await _generateImageByProvider(provider, prompt);
         if (!result || !result.imageUrl) throw new Error('没有生成到图片');
-        message.novelAiImageUrl = result.imageUrl;
-        message.novelAiPrompt = prompt;
-        message.generatedImageProvider = provider;
-        saveData();
+        await _safeSaveGeneratedMessageImage(message, result.imageUrl, prompt, provider);
 
         if (bubble) {
             bubble.className = 'image-bubble';
@@ -100,7 +163,7 @@ async function rerollNovelAiImage(messageId) {
         }
         if (typeof showToast === 'function') showToast('已重新生成图片', 'success');
     } catch (err) {
-        console.error('[NovelAI Auto] 重roll失败:', err);
+        console.error('[Image Auto] 重roll失败:', err);
         if (bubble) {
             if (oldImageUrl) {
                 bubble.className = 'image-bubble';
@@ -1343,10 +1406,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                             if (chat && chat.history) {
                                 const msg = chat.history.find(m => m.id === msgId);
                                 if (msg) {
-                                    msg.novelAiImageUrl = result.imageUrl;
-                                    msg.novelAiPrompt = naiPrompt;
-                                    msg.generatedImageProvider = _imageProvider;
-                                    saveData();
+                                    await _safeSaveGeneratedMessageImage(msg, result.imageUrl, naiPrompt, _imageProvider);
                                 }
                             }
                             
@@ -1355,7 +1415,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                             bubbleRef.innerHTML = _renderNovelAiImageBubbleContent(result.imageUrl, msgId);
                         }
                     } catch (err) {
-                        console.error('[NovelAI Auto] 生图失败:', err);
+                        console.error('[Image Auto] 生图失败:', err);
                         // 失败时回退为普通 pv-card
                         bubbleRef.className = 'pv-card';
                         const displayContent = _pvContent.replace(/\{\{[\s\S]+?\}\}/, '').trim();

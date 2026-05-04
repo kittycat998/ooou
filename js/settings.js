@@ -2497,6 +2497,15 @@ function setupGptImageSettings() {
     }
     if (providerEl) providerEl.value = db.imageGenerationProvider || 'novelai';
 
+    // 开关变化时先写入内存，避免只切开关未点保存导致重开后状态不一致
+    if (enabledEl) {
+        enabledEl.addEventListener('change', async () => {
+            if (!db.gptImageSettings) db.gptImageSettings = {};
+            db.gptImageSettings.enabled = !!enabledEl.checked;
+            try { await saveData(); } catch (e) { console.error('[GPT Image] 自动保存开关失败:', e); }
+        });
+    }
+
     if (endpointModeEl && customEndpointRow) {
         endpointModeEl.addEventListener('change', () => {
             customEndpointRow.style.display = endpointModeEl.value === 'custom' ? 'flex' : 'none';
