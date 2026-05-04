@@ -2178,6 +2178,27 @@
                         </div>
 
                         <div class="kkt-item">
+                            <div class="kkt-item-label">连接方式</div>
+                            <div class="kkt-item-control">
+                                <select id="novelai-endpoint-mode"
+                                    style="border:none; background:transparent; text-align:right; direction: rtl; appearance: none; -webkit-appearance: none; padding-right: 15px;">
+                                    <option value="official">官方 NovelAI</option>
+                                    <option value="custom">自定义端点（反代/第三方）</option>
+                                </select>
+                                <span class="kkt-arrow">›</span>
+                            </div>
+                        </div>
+
+                        <div class="kkt-item" id="novelai-custom-endpoint-row" style="display:none;">
+                            <div class="kkt-item-label">自定义端点 URL</div>
+                            <div class="kkt-item-control">
+                                <input type="url" id="novelai-custom-endpoint" autocomplete="off"
+                                    placeholder="https://your-proxy.com"
+                                    style="text-align:right; border:none; background:transparent; width: 100%;">
+                            </div>
+                        </div>
+
+                        <div class="kkt-item">
                             <div class="kkt-item-label">采样器</div>
                             <div class="kkt-item-control">
                                 <select id="novelai-sampler"

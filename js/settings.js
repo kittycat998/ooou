@@ -2326,6 +2326,9 @@ function setupSubApiPresets(prefix, dbKey, presetsKey) {
 function setupNovelAiSettings() {
     const enabledEl = document.getElementById('novelai-enabled');
     const tokenEl = document.getElementById('novelai-token');
+    const endpointModeEl = document.getElementById('novelai-endpoint-mode');
+    const customEndpointEl = document.getElementById('novelai-custom-endpoint');
+    const customEndpointRow = document.getElementById('novelai-custom-endpoint-row');
     const modelEl = document.getElementById('novelai-model');
     const resolutionEl = document.getElementById('novelai-resolution');
     const samplerEl = document.getElementById('novelai-sampler');
@@ -2344,6 +2347,9 @@ function setupNovelAiSettings() {
         const s = db.novelAiSettings;
         if (enabledEl) enabledEl.checked = !!s.enabled;
         if (tokenEl) tokenEl.value = s.token || '';
+        if (endpointModeEl) endpointModeEl.value = s.endpointMode || (s.customEndpoint ? 'custom' : 'official');
+        if (customEndpointEl) customEndpointEl.value = s.customEndpoint || '';
+        if (customEndpointRow) customEndpointRow.style.display = (endpointModeEl && endpointModeEl.value === 'custom') ? 'flex' : 'none';
         if (modelEl && s.model) modelEl.value = s.model;
         if (resolutionEl && s.resolution) resolutionEl.value = s.resolution;
         if (samplerEl && s.sampler) samplerEl.value = s.sampler;
@@ -2378,12 +2384,21 @@ function setupNovelAiSettings() {
         });
     }
 
+    // 连接方式切换
+    if (endpointModeEl && customEndpointRow) {
+        endpointModeEl.addEventListener('change', () => {
+            customEndpointRow.style.display = endpointModeEl.value === 'custom' ? 'flex' : 'none';
+        });
+    }
+
     // 保存设置
     if (saveBtn) {
         saveBtn.addEventListener('click', async () => {
             db.novelAiSettings = {
                 enabled: enabledEl ? enabledEl.checked : false,
                 token: tokenEl ? tokenEl.value.trim() : '',
+                endpointMode: endpointModeEl ? endpointModeEl.value : 'official',
+                customEndpoint: customEndpointEl ? customEndpointEl.value.trim() : '',
                 model: modelEl ? modelEl.value : 'nai-diffusion-4-curated-preview',
                 resolution: resolutionEl ? resolutionEl.value : '832x1216',
                 sampler: samplerEl ? samplerEl.value : 'k_euler',
@@ -2413,6 +2428,8 @@ function setupNovelAiSettings() {
             try {
                 const result = await generateNovelAiImage('1girl, upper body, beautiful', {
                     token: token,
+                    endpointMode: endpointModeEl ? endpointModeEl.value : 'official',
+                    customEndpoint: customEndpointEl ? customEndpointEl.value.trim() : '',
                     model: modelEl ? modelEl.value : 'nai-diffusion-4-curated-preview',
                     resolution: resolutionEl ? resolutionEl.value : '832x1216',
                     sampler: samplerEl ? samplerEl.value : 'k_euler',

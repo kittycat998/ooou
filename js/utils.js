@@ -916,6 +916,27 @@ function _nai_resolveBase64Image(b64) {
     return `data:image/png;base64,${b64}`;
 }
 
+function _nai_resolveApiUrl(settings, isV4) {
+    const official = isV4
+        ? 'https://image.novelai.net/ai/generate-image-stream'
+        : 'https://image.novelai.net/ai/generate-image';
+
+    const mode = settings.endpointMode || (settings.customEndpoint ? 'custom' : 'official');
+    let raw = (settings.customEndpoint || '').trim();
+
+    if (mode !== 'custom' || !raw) return official;
+
+    raw = raw.replace(/\/+$/, '');
+
+    // 如果用户填的是完整接口地址，直接使用
+    if (/\/ai\/generate-image(?:-stream)?$/i.test(raw) || /\/generate-image(?:-stream)?$/i.test(raw) || /\/v1\/images\/generations$/i.test(raw)) {
+        return raw;
+    }
+
+    // 否则当作 NovelAI 反代根地址，自动拼接 NovelAI 路径
+    return raw + (isV4 ? '/ai/generate-image-stream' : '/ai/generate-image');
+}
+
 /**
  * 调用 NovelAI 图像生成 API
  * @param {string} prompt - 正面提示词 (英文 tag)
@@ -1025,10 +1046,8 @@ async function generateNovelAiImage(prompt, overrideSettings = {}) {
         };
     }
 
-    // V4 使用 stream 端点，V3 使用普通端点
-    const apiUrl = isV4
-        ? 'https://image.novelai.net/ai/generate-image-stream'
-        : 'https://image.novelai.net/ai/generate-image';
+    // V4 使用 stream 端点，V3 使用普通端点；支持自定义 NovelAI 反代/第三方端点
+    const apiUrl = _nai_resolveApiUrl(settings, isV4);
 
     console.log('[NovelAI] 发送生图请求:', { apiUrl, model, isV4, width, height, steps, scale, sampler });
 
