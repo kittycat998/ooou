@@ -1175,6 +1175,110 @@ async function novelAiGenerate(prompt) {
     return generateNovelAiImage(prompt);
 }
 
+
+
+// === GPT / OpenAI 生图 API ===
+function _gpt_resolveApiUrl(settings) {
+    const official = 'https://api.openai.com/v1/images/generations';
+    const mode = settings.endpointMode || (settings.customEndpoint ? 'custom' : 'official');
+    let raw = (settings.customEndpoint || '').trim();
+    if (mode !== 'custom' || !raw) return official;
+    raw = raw.replace(/\/+$/, '');
+    if (/\/v1\/images\/generations$/i.test(raw) || /\/images\/generations$/i.test(raw)) return raw;
+    return raw + '/v1/images/generations';
+}
+
+function _gpt_resolveImageFromJson(jsonData) {
+    if (!jsonData) return null;
+    if (jsonData.data && Array.isArray(jsonData.data) && jsonData.data[0]) {
+        const item = jsonData.data[0];
+        if (item.url) return item.url;
+        if (item.b64_json) return 'data:image/png;base64,' + item.b64_json;
+        if (item.base64) return 'data:image/png;base64,' + item.base64;
+    }
+    if (jsonData.url) return jsonData.url;
+    if (jsonData.image) return _nai_resolveBase64Image(jsonData.image);
+    if (jsonData.b64_json) return 'data:image/png;base64,' + jsonData.b64_json;
+    return null;
+}
+
+function _gpt_buildPrompt(prompt, settings) {
+    const parts = [];
+    if (settings.positivePrompt) parts.push(settings.positivePrompt);
+    parts.push(prompt);
+    let finalPrompt = parts.filter(Boolean).join('\n\n');
+    if (settings.negativePrompt) {
+        finalPrompt += `\n\nAvoid: ${settings.negativePrompt}`;
+    }
+    return finalPrompt.trim();
+}
+
+async function generateGptImage(prompt, overrideSettings = {}) {
+    const settings = Object.assign({}, db.gptImageSettings || {}, overrideSettings);
+    const apiKey = settings.apiKey || settings.token || '';
+    if (!apiKey) throw new Error('GPT / OpenAI API 密钥未配置');
+    if (!prompt || !String(prompt).trim()) throw new Error('提示词不能为空');
+
+    const model = settings.model || 'gpt-image-1';
+    const size = settings.size || '1024x1024';
+    const quality = settings.quality || 'auto';
+    const apiUrl = _gpt_resolveApiUrl(settings);
+    const finalPrompt = _gpt_buildPrompt(String(prompt).trim(), settings);
+
+    const body = {
+        model: model,
+        prompt: finalPrompt,
+        size: size === 'auto' ? '1024x1024' : size
+    };
+
+    if (quality && quality !== 'auto') body.quality = quality;
+    if (/gpt-image|dall-e/i.test(model)) body.response_format = 'b64_json';
+
+    console.log('[GPT Image] 发送生图请求:', { apiUrl, model, size: body.size, quality: body.quality || 'auto' });
+
+    const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey.trim()}`
+        },
+        body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+        let errDetail = '';
+        try {
+            const errText = await response.text();
+            try { const errObj = JSON.parse(errText); errDetail = errObj.message || errObj.error?.message || errObj.error || errText.substring(0, 200); }
+            catch (_) { errDetail = errText.substring(0, 200); }
+        } catch (_) {}
+        if (response.status === 401) throw new Error('API 密钥无效或已过期');
+        if (response.status === 429) throw new Error('请求过于频繁，请稍后再试');
+        throw new Error(`API 返回错误 (${response.status}): ${errDetail}`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    let imageUrl = null;
+    if (contentType.includes('application/json')) {
+        const json = await response.json();
+        imageUrl = _gpt_resolveImageFromJson(json);
+    } else {
+        const blob = await response.blob();
+        imageUrl = await _nai_blobToDataUrl(blob);
+    }
+
+    if (!imageUrl) throw new Error('响应中未找到图片数据');
+    console.log('[GPT Image] ✅ 生图成功');
+    return { imageUrl };
+}
+
+async function gptImageGenerate(prompt) {
+    if (!db.gptImageSettings || !db.gptImageSettings.enabled) {
+        throw new Error('GPT 生图未启用，请在 API 设置中开启');
+    }
+    return generateGptImage(prompt);
+}
+
 // 暴露给全局
 window.openImageViewer = openImageViewer;
 window.getRandomValue = getRandomValue;
@@ -1185,3 +1289,5 @@ window.showToast = showToast;
 window.playSound = (typeof playSound !== 'undefined') ? playSound : null; // 防止循环依赖
 window.generateNovelAiImage = generateNovelAiImage;
 window.novelAiGenerate = novelAiGenerate;
+window.generateGptImage = generateGptImage;
+window.gptImageGenerate = gptImageGenerate;

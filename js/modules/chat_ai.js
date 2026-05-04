@@ -1898,15 +1898,17 @@ b) [${character.realName}拒绝了${character.myName}的代付请求]
     prompt += `</logic_rules>\n\n`
     let photoVideoFormat = '';
     const _novelAiAutoEnabled = db.novelAiSettings && db.novelAiSettings.enabled && db.novelAiSettings.token;
+    const _gptImageAutoEnabled = db.gptImageSettings && db.gptImageSettings.enabled && db.gptImageSettings.apiKey;
+    const _imageAutoEnabled = _novelAiAutoEnabled || _gptImageAutoEnabled;
     if (character.useRealGallery && character.gallery && character.gallery.length > 0) {
-        if (_novelAiAutoEnabled) {
-            photoVideoFormat = `e) 照片/视频: [${character.realName}发来的照片/视频：{相册图片名称} 或 {中文描述}{{english, novelai, tags}}] (优先使用相册名称；若相册无匹配则填写中文描述，并在 {{ }} 内写英文 NovelAI/Danbooru 风格 tag。根据角色性别用1boy或1girl，包含外貌特征、服装、表情、动作、场景，不加质量词，不超过25个tag)`;
+        if (_imageAutoEnabled) {
+            photoVideoFormat = `e) 照片/视频: [${character.realName}发来的照片/视频：{相册图片名称} 或 {中文描述}{{english prompt / tags}}] (优先使用相册名称；若相册无匹配则填写中文描述，并在 {{ }} 内写英文生图提示词。可写自然语言短句，也可写简洁 tag。根据角色性别用1boy或1girl，包含外貌特征、服装、表情、动作、场景，不加质量词，尽量控制在25个关键词以内)`;
         } else {
             photoVideoFormat = `e) 照片/视频: [${character.realName}发来的照片/视频：{相册图片名称} 或 {文字描述}] (优先使用相册名称，若相册无匹配则填写照片/视频的详细文字描述)`;
         }
     } else {
-        if (_novelAiAutoEnabled) {
-            photoVideoFormat = `e) 照片/视频: [${character.realName}发来的照片/视频：{中文描述}{{english, novelai, tags}}] (发图时必须在 {{ }} 内写英文 NovelAI/Danbooru 风格 tag。根据角色性别用1boy或1girl，包含外貌特征、服装、表情、动作、场景，不加质量词，不超过25个tag)`;
+        if (_imageAutoEnabled) {
+            photoVideoFormat = `e) 照片/视频: [${character.realName}发来的照片/视频：{中文描述}{{english prompt / tags}}] (发图时必须在 {{ }} 内写英文生图提示词。可写自然语言短句，也可写简洁 tag。根据角色性别用1boy或1girl，包含外貌特征、服装、表情、动作、场景，不加质量词，尽量控制在25个关键词以内)`;
         } else {
             photoVideoFormat = `e) 照片/视频: [${character.realName}发来的照片/视频：{描述}]`;
         }

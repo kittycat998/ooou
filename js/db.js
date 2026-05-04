@@ -169,7 +169,7 @@ const globalSettingKeys = [
     'theaterScenarios', 'theaterPromptPresets',
     'theaterHtmlScenarios', 'theaterHtmlPromptPresets', 'theaterMode',
     'theaterApiSettings', 'theaterFontSize', 'theaterFontPreset',
-    'novelAiSettings', 'avatarRecognitionDetailLevel',
+    'novelAiSettings', 'gptImageSettings', 'imageGenerationProvider', 'avatarRecognitionDetailLevel',
     'phoneControlRecycleBin'
 ];
 if (typeof window !== 'undefined') window.globalSettingKeysForBackup = globalSettingKeys;

@@ -33,6 +33,23 @@ function _extractNovelAiPromptFromMessage(message) {
     return (tagMatch ? tagMatch[1] : pvContent).trim();
 }
 
+function _getAutoImageProvider() {
+    const preferred = db.imageGenerationProvider || 'novelai';
+    const hasNovel = !!(db.novelAiSettings && db.novelAiSettings.enabled && db.novelAiSettings.token);
+    const hasGpt = !!(db.gptImageSettings && db.gptImageSettings.enabled && db.gptImageSettings.apiKey);
+    if (preferred === 'gpt') return hasGpt ? 'gpt' : (hasNovel ? 'novelai' : null);
+    return hasNovel ? 'novelai' : (hasGpt ? 'gpt' : null);
+}
+
+async function _generateImageByProvider(provider, prompt) {
+    if (provider === 'gpt') return generateGptImage(prompt);
+    return generateNovelAiImage(prompt);
+}
+
+function _getMessageImageProvider(message) {
+    return (message && message.generatedImageProvider) || _getAutoImageProvider() || 'novelai';
+}
+
 function _getNovelAiLoadingHtml(text) {
     return `
         <div class="nai-loading-card" style="width: 200px; height: 240px; border-radius: 12px; background: rgba(255,255,255,0.12); display:flex; align-items:center; justify-content:center; gap: 10px; overflow:hidden; position:relative; flex-direction: column;">
@@ -63,16 +80,18 @@ async function rerollNovelAiImage(messageId) {
     const wrapper = document.querySelector(`.message-wrapper[data-id="${messageId}"]`);
     const bubble = wrapper ? wrapper.querySelector('.image-bubble, .pv-card') : null;
     const oldImageUrl = message.novelAiImageUrl || '';
+    const provider = _getMessageImageProvider(message);
 
     try {
         if (bubble) {
             bubble.className = 'image-bubble nai-generating';
             bubble.innerHTML = _getNovelAiLoadingHtml('正在重新生成图片...');
         }
-        const result = await generateNovelAiImage(prompt);
+        const result = await _generateImageByProvider(provider, prompt);
         if (!result || !result.imageUrl) throw new Error('没有生成到图片');
         message.novelAiImageUrl = result.imageUrl;
         message.novelAiPrompt = prompt;
+        message.generatedImageProvider = provider;
         saveData();
 
         if (bubble) {
@@ -104,7 +123,8 @@ function saveNovelAiImage(messageId) {
     }
     const a = document.createElement('a');
     a.href = imageUrl;
-    a.download = `novelai-${messageId || Date.now()}.png`;
+    const provider = found && found.message ? _getMessageImageProvider(found.message) : 'image';
+    a.download = `${provider}-${messageId || Date.now()}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -1276,16 +1296,16 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
             bubbleElement.className = 'image-bubble';
             bubbleElement.innerHTML = `<img src="${realPhotoUrl}" alt="${pvContent}" onclick="openImageViewer(this.src)" style="cursor: zoom-in;">`;
         } else {
-            // === NovelAI 自动生图逻辑 ===
-            const _naiEnabled = db.novelAiSettings && db.novelAiSettings.enabled && db.novelAiSettings.token;
+            // === 自动生图逻辑（NovelAI / GPT） ===
+            const _imageProvider = _getAutoImageProvider();
             
             if (message.novelAiImageUrl) {
-                // 已有生成好的图片（即使 NovelAI 已关闭也显示已生成的图片）
+                // 已有生成好的图片（即使关闭对应引擎也显示已生成的图片）
                 bubbleElement = document.createElement('div');
                 bubbleElement.className = 'image-bubble';
                 bubbleElement.innerHTML = _renderNovelAiImageBubbleContent(message.novelAiImageUrl, message.id);
-            } else if (_naiEnabled && !isSent && _naiAutoGenNewMsgIds.has(message.id)) {
-                // NovelAI 已启用，角色发的新照片消息，触发自动生成
+            } else if (_imageProvider && !isSent && _naiAutoGenNewMsgIds.has(message.id)) {
+                // 已启用自动生图，角色发的新照片消息，触发生成
                 bubbleElement = document.createElement('div');
                 bubbleElement.className = 'image-bubble nai-generating';
                 bubbleElement.innerHTML = `
@@ -1312,8 +1332,8 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                             naiPrompt = _pvContent;
                         }
                         
-                        console.log('[NovelAI Auto] 为消息生图, prompt:', naiPrompt);
-                        const result = await generateNovelAiImage(naiPrompt);
+                        console.log('[Image Auto] 为消息生图, provider:', _imageProvider, 'prompt:', naiPrompt);
+                        const result = await _generateImageByProvider(_imageProvider, naiPrompt);
                         
                         if (result && result.imageUrl) {
                             // 将生成的图片保存到消息对象中
@@ -1325,6 +1345,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                                 if (msg) {
                                     msg.novelAiImageUrl = result.imageUrl;
                                     msg.novelAiPrompt = naiPrompt;
+                                    msg.generatedImageProvider = _imageProvider;
                                     saveData();
                                 }
                             }
@@ -1343,7 +1364,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                 });
                 _naiAutoGenProcess();
             } else {
-                // NovelAI 未启用或是用户发的，显示原始 pv-card
+                // 未启用自动生图或是用户发的，显示原始 pv-card
                 const displayContent = pvContent.replace(/\{\{[\s\S]+?\}\}/, '').trim() || pvContent;
                 bubbleElement = document.createElement('div');
                 bubbleElement.className = 'pv-card';
