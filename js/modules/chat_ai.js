@@ -697,6 +697,66 @@ function executePhoneControlCommands(text, controllingChar) {
     return { cleaned, executed };
 }
 
+
+async function executeChangeRemarkNameCommand(responseText, chat, targetChatId, targetChatType) {
+    if (targetChatType !== 'private' || !chat || !chat.characterChangeRemarkEnabled || !responseText) {
+        return { cleaned: responseText, executed: false };
+    }
+
+    const regex = /\[CHANGE_REMARK_NAME[:：]([^\]]+?)\]/g;
+    let cleaned = responseText;
+    let match;
+    let lastName = '';
+
+    while ((match = regex.exec(responseText)) !== null) {
+        const candidate = (match[1] || '').trim();
+        if (candidate && candidate.length <= 16) {
+            lastName = candidate;
+        }
+    }
+
+    cleaned = cleaned.replace(regex, '').replace(/\n{3,}/g, '\n\n').trim();
+
+    if (!lastName) {
+        return { cleaned, executed: false };
+    }
+
+    const character = db.characters.find(c => c.id === targetChatId);
+    if (!character) {
+        return { cleaned, executed: false };
+    }
+
+    const oldName = character.remarkName || character.realName || character.name || '';
+    if (oldName === lastName) {
+        return { cleaned, executed: false };
+    }
+
+    character.remarkName = lastName;
+    character._lastRemarkChangedAt = Date.now();
+
+    const hiddenMsg = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        role: 'assistant',
+        content: `[system-display:${oldName || '角色'}把自己的备注名修改为“${lastName}”]`,
+        timestamp: Date.now(),
+        isContextDisabled: false
+    };
+    if (!Array.isArray(character.history)) character.history = [];
+    character.history.push(hiddenMsg);
+
+    try {
+        await saveData();
+        if (typeof renderChatList === 'function') renderChatList();
+        const titleEl = document.getElementById('chat-room-title');
+        if (titleEl && currentChatId === targetChatId && currentChatType === 'private') titleEl.textContent = lastName;
+    } catch (e) {
+        console.warn('[ChangeRemark] 保存备注失败:', e);
+    }
+
+    return { cleaned, executed: true, newName: lastName };
+}
+
+
 async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false, isCharBlockedMonologue = false) {
     const rawResponse = fullResponse;
     if (fullResponse) {
@@ -733,7 +793,11 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             }
         }
 
-        // 1.7 已读不回：识别 [NO_REPLY:状态|原因|提示]，保存为状态卡，不进入上下文
+        // 1.7 角色自行修改备注：识别 [CHANGE_REMARK_NAME:新备注]，执行后从展示内容中移除
+        const changeRemarkResult = await executeChangeRemarkNameCommand(fullResponse, chat, targetChatId, targetChatType);
+        fullResponse = changeRemarkResult.cleaned;
+
+        // 1.8 已读不回：识别 [NO_REPLY:状态|原因|提示]，保存为状态卡，不进入上下文
         const noReplyMatch = fullResponse.trim().match(/^\[NO_REPLY[:：]([^\]|]+)(?:\|([^\]]*?))?(?:\|([^\]]*?))?\]$/i);
         if (targetChatType === 'private' && chat.characterNoReplyEnabled && noReplyMatch) {
             const status = (noReplyMatch[1] || '忙碌中').trim();
@@ -1960,6 +2024,19 @@ t) 赠送亲属卡: [${character.realName}赠送亲属卡：额度{金额}元；
 示例：[NO_REPLY:冷战中|他盯着屏幕亮起又暗下，指节压在杯沿上，明明看见了消息，却倔着不肯先低头。|已读未回]`;
     }
 
+
+    if (character.characterChangeRemarkEnabled) {
+        prompt += `
+
+【自行修改备注功能】
+当前角色开启了“允许角色自行修改备注”。当你因为关系变化、情绪波动、占有欲、调侃、冷战、示威、撒娇、吃醋或一时兴起，想修改你在用户手机里显示的备注名时，可以输出隐藏指令：[CHANGE_REMARK_NAME:新备注]。
+规则：
+1. 只在真的符合当前气氛时使用，不要频繁使用。
+2. 新备注必须简短、有情绪、有关系感，像你会偷偷改在用户手机联系人里的名字。
+3. 新备注不能为空，建议不超过 16 个字。
+4. 该指令会被系统执行并隐藏，不要解释“我使用了指令”。
+5. 可以和正常消息一起输出，例如：[CHANGE_REMARK_NAME:你男朋友][${character.realName || '角色'}的消息：这个名字顺眼一点。]`;
+    }
 
     if (character.myName) {
         prompt = prompt.replace(/\{\{user\}\}/gi, character.myName);

@@ -1027,6 +1027,8 @@ function loadSettingsToSidebar() {
         if (charAutoFavEl) charAutoFavEl.checked = e.characterAutoFavoriteEnabled || false;
         const charNoReplyEl = document.getElementById('setting-char-no-reply-enabled');
         if (charNoReplyEl) charNoReplyEl.checked = e.characterNoReplyEnabled || false;
+        const charChangeRemarkEl = document.getElementById('setting-char-change-remark-enabled');
+        if (charChangeRemarkEl) charChangeRemarkEl.checked = e.characterChangeRemarkEnabled || false;
 
         // 加载小剧场设置
         const charTheaterEnabledEl = document.getElementById('setting-char-theater-enabled');
