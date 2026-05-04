@@ -1478,6 +1478,8 @@ async function saveSettingsFromSidebar() {
         e.characterAutoFavoriteEnabled = charAutoFavEl ? charAutoFavEl.checked : false;
         const charNoReplyEl = document.getElementById('setting-char-no-reply-enabled');
         e.characterNoReplyEnabled = charNoReplyEl ? charNoReplyEl.checked : false;
+        const charChangeRemarkEl = document.getElementById('setting-char-change-remark-enabled');
+        e.characterChangeRemarkEnabled = charChangeRemarkEl ? charChangeRemarkEl.checked : false;
 
         // 保存小剧场设置
         const charTheaterEnabledSave = document.getElementById('setting-char-theater-enabled');
