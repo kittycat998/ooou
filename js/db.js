@@ -169,7 +169,7 @@ const globalSettingKeys = [
     'theaterScenarios', 'theaterPromptPresets',
     'theaterHtmlScenarios', 'theaterHtmlPromptPresets', 'theaterMode',
     'theaterApiSettings', 'theaterFontSize', 'theaterFontPreset',
-    'novelAiSettings', 'gptImageSettings', 'imageGenerationProvider', 'avatarRecognitionDetailLevel',
+    'novelAiSettings', 'avatarRecognitionDetailLevel',
     'phoneControlRecycleBin'
 ];
 if (typeof window !== 'undefined') window.globalSettingKeysForBackup = globalSettingKeys;
@@ -846,9 +846,7 @@ const loadData = async () => {
             theaterApiSettings: { useTheaterApi: false, url: '', key: '', model: '' },
             theaterFontSize: 15,
             theaterFontPreset: null,
-            avatarRecognitionDetailLevel: 'detailed',
-            gptImageSettings: { enabled: false, apiKey: '', endpointMode: 'official', customEndpoint: '', model: 'gpt-image-1', size: '1024x1024', quality: 'auto', positivePrompt: '', negativePrompt: '' },
-            imageGenerationProvider: 'novelai'
+            avatarRecognitionDetailLevel: 'detailed'
         };
         db[key] = settings[key] !== undefined ? settings[key] : (defaultValue[key] !== undefined ? JSON.parse(JSON.stringify(defaultValue[key])) : undefined);
     });

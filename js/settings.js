@@ -1848,9 +1848,6 @@ function setupApiSettingsApp() {
 
     // === NovelAI 生图 API 设置 ===
     setupNovelAiSettings();
-
-    // === GPT / OpenAI 生图 API 设置 ===
-    setupGptImageSettings();
 }
 
 // --- 预设管理 ---
@@ -2454,122 +2451,6 @@ function setupNovelAiSettings() {
                 }
             } catch (err) {
                 console.error('[NovelAI] 测试生图失败:', err);
-                showToast('❌ 生图失败: ' + (err.message || '未知错误'));
-            } finally {
-                testBtn.disabled = false;
-                testBtn.querySelector('.btn-text').textContent = '🎨 测试生图';
-            }
-        });
-    }
-}
-
-
-// === GPT / OpenAI 生图 API 设置 ===
-function setupGptImageSettings() {
-    const enabledEl = document.getElementById('gpt-image-enabled');
-    const apiKeyEl = document.getElementById('gpt-image-api-key');
-    const endpointModeEl = document.getElementById('gpt-image-endpoint-mode');
-    const customEndpointEl = document.getElementById('gpt-image-custom-endpoint');
-    const customEndpointRow = document.getElementById('gpt-image-custom-endpoint-row');
-    const modelEl = document.getElementById('gpt-image-model');
-    const sizeEl = document.getElementById('gpt-image-size');
-    const qualityEl = document.getElementById('gpt-image-quality');
-    const positivePromptEl = document.getElementById('gpt-image-positive-prompt');
-    const negativePromptEl = document.getElementById('gpt-image-negative-prompt');
-    const providerEl = document.getElementById('image-generation-provider');
-    const saveBtn = document.getElementById('gpt-image-save-btn');
-    const testBtn = document.getElementById('gpt-image-test-btn');
-
-    if (db.gptImageSettings) {
-        const s = db.gptImageSettings;
-        if (enabledEl) enabledEl.checked = !!s.enabled;
-        if (apiKeyEl) apiKeyEl.value = s.apiKey || '';
-        if (endpointModeEl) endpointModeEl.value = s.endpointMode || (s.customEndpoint ? 'custom' : 'official');
-        if (customEndpointEl) customEndpointEl.value = s.customEndpoint || '';
-        if (customEndpointRow) customEndpointRow.style.display = (endpointModeEl && endpointModeEl.value === 'custom') ? 'flex' : 'none';
-        if (modelEl) modelEl.value = s.model || 'gpt-image-1';
-        if (sizeEl) sizeEl.value = s.size || '1024x1024';
-        if (qualityEl) qualityEl.value = s.quality || 'auto';
-        if (positivePromptEl) positivePromptEl.value = s.positivePrompt || '';
-        if (negativePromptEl) negativePromptEl.value = s.negativePrompt || '';
-    } else {
-        if (modelEl) modelEl.value = 'gpt-image-1';
-    }
-    if (providerEl) providerEl.value = db.imageGenerationProvider || 'novelai';
-
-    // 开关变化时先写入内存，避免只切开关未点保存导致重开后状态不一致
-    if (enabledEl) {
-        enabledEl.addEventListener('change', async () => {
-            if (!db.gptImageSettings) db.gptImageSettings = {};
-            db.gptImageSettings.enabled = !!enabledEl.checked;
-            try { await saveData(); } catch (e) { console.error('[GPT Image] 自动保存开关失败:', e); }
-        });
-    }
-
-    if (endpointModeEl && customEndpointRow) {
-        endpointModeEl.addEventListener('change', () => {
-            customEndpointRow.style.display = endpointModeEl.value === 'custom' ? 'flex' : 'none';
-        });
-    }
-
-    if (saveBtn) {
-        saveBtn.addEventListener('click', async () => {
-            db.gptImageSettings = {
-                enabled: enabledEl ? enabledEl.checked : false,
-                apiKey: apiKeyEl ? apiKeyEl.value.trim() : '',
-                endpointMode: endpointModeEl ? endpointModeEl.value : 'official',
-                customEndpoint: customEndpointEl ? customEndpointEl.value.trim() : '',
-                model: modelEl ? modelEl.value.trim() || 'gpt-image-1' : 'gpt-image-1',
-                size: sizeEl ? sizeEl.value : '1024x1024',
-                quality: qualityEl ? qualityEl.value : 'auto',
-                positivePrompt: positivePromptEl ? positivePromptEl.value.trim() : '',
-                negativePrompt: negativePromptEl ? negativePromptEl.value.trim() : ''
-            };
-            if (providerEl) db.imageGenerationProvider = providerEl.value || 'novelai';
-            await saveData();
-            showToast('GPT 生图设置已保存！');
-        });
-    }
-
-    if (providerEl) {
-        providerEl.addEventListener('change', async () => {
-            db.imageGenerationProvider = providerEl.value || 'novelai';
-            await saveData();
-        });
-    }
-
-    if (testBtn) {
-        testBtn.addEventListener('click', async () => {
-            const apiKey = apiKeyEl ? apiKeyEl.value.trim() : '';
-            if (!apiKey) {
-                showToast('请先填写 GPT / OpenAI API 密钥');
-                return;
-            }
-
-            testBtn.disabled = true;
-            testBtn.querySelector('.btn-text').textContent = '⏳ 生成中...';
-            try {
-                const result = await generateGptImage('A cute semi-realistic portrait of a young person, soft lighting, upper body', {
-                    apiKey: apiKey,
-                    endpointMode: endpointModeEl ? endpointModeEl.value : 'official',
-                    customEndpoint: customEndpointEl ? customEndpointEl.value.trim() : '',
-                    model: modelEl ? modelEl.value.trim() || 'gpt-image-1' : 'gpt-image-1',
-                    size: sizeEl ? sizeEl.value : '1024x1024',
-                    quality: qualityEl ? qualityEl.value : 'auto',
-                    positivePrompt: positivePromptEl ? positivePromptEl.value.trim() : '',
-                    negativePrompt: negativePromptEl ? negativePromptEl.value.trim() : ''
-                });
-                if (result && result.imageUrl) {
-                    const preview = document.getElementById('gpt-image-test-preview');
-                    const img = document.getElementById('gpt-image-test-image');
-                    if (preview && img) {
-                        img.src = result.imageUrl;
-                        preview.style.display = 'block';
-                    }
-                    showToast('✅ GPT 测试生图成功！');
-                }
-            } catch (err) {
-                console.error('[GPT Image] 测试生图失败:', err);
                 showToast('❌ 生图失败: ' + (err.message || '未知错误'));
             } finally {
                 testBtn.disabled = false;
