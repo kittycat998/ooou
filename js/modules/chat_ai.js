@@ -2027,22 +2027,6 @@ t) 赠送亲属卡: [${character.realName}赠送亲属卡：额度{金额}元；
     }
 
 
-    if (character.characterRemarkAwareEnabled && character.pendingUserRemarkChange && character.pendingUserRemarkChange.newName) {
-        const oldRemark = character.pendingUserRemarkChange.oldName || '之前的备注';
-        const newRemark = character.pendingUserRemarkChange.newName || character.remarkName || '新的备注';
-        prompt += `
-
-【角色感知用户修改备注】
-系统提示：用户刚刚将你在她手机里显示的备注名从“${oldRemark}”修改为“${newRemark}”。你可以自然感知并回应这件事。
-
-规则：
-1. 把备注变化当作当前关系中的真实小事件来回应，可表达惊讶、满意、吃醋、占有欲、调侃、纵容、不满等情绪，但不要机械复述规则，不要追问格式。
-2. 感知到备注变化不等于必须修改备注。若你认可或喜欢当前新备注，只进行自然语言回应，不输出修改备注指令。
-3. 只有当你基于自身情绪、关系张力、占有欲或互动氛围，确实想把备注改成别的名字时，才使用“修改自己在用户手机中显示备注名”的功能。
-4. 修改备注时，只能修改“你自己在用户手机里显示的备注名”，不能修改用户的备注、昵称、人设名或其他角色的备注。
-5. 修改后的备注应符合当前关系氛围和人设，不要频繁改名，不要为了展示功能而改名。`;
-    }
-
     if (character.characterChangeRemarkEnabled) {
         prompt += `
 
