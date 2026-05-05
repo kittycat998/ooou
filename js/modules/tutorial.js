@@ -119,7 +119,7 @@ function showUpdateModal() {
 
     // 强制阅读倒计时
     const originalText = "我知道了";
-    let timeLeft = 10;
+    let timeLeft = 2;
     closeBtn.disabled = true;
     closeBtn.textContent = `请阅读 (${timeLeft}s)`;
     closeBtn.style.opacity = '0.6';

@@ -174,8 +174,36 @@ const globalSettingKeys = [
 ];
 if (typeof window !== 'undefined') window.globalSettingKeysForBackup = globalSettingKeys;
 
-const appVersion = "3.15.1";
+const appVersion = "v51-2026-05-04";
 const updateLog = [
+    {
+        version: "v51",
+        date: "2026-05-04",
+        notes: [
+            "v51：新增角色感知用户修改备注开关。",
+            "开启后，用户手动修改角色备注会在聊天里显示灰色系统提示，并在下一轮让角色自然感知。",
+            "关闭时不注入上下文，节省 token。"
+        ]
+    },
+    {
+        version: "v50",
+        date: "2026-05-04",
+        notes: [
+            "v50：修复 v49 打开后可能出现 characters.bulkPut 保存失败的问题。",
+            "保留 v42 稳定底包和更新弹窗。",
+            "保存方式从批量 bulkPut 改成逐条 put，降低 iOS IndexedDB 抽风概率。"
+        ]
+    },
+    {
+        version: "v49",
+        date: "2026-05-04",
+        notes: [
+            "v49：回退到稳定 v42 作为底包。",
+            "保留：后台保活真实 mp3、未读灰色小圈数字。",
+            "新增：更新弹窗提示。以后每次发新版，只要修改 appVersion，就会自动弹出更新日志。",
+            "舍弃：v43-v48 的编辑消息增强、引用增强、局部保存试验，避免按钮卡死和保存异常。"
+        ]
+    },
     {
         version: "3.15.1",
         date: "2026-03-15",
@@ -747,21 +775,38 @@ function initDatabase() {
 
 // 数据保存与加载
 const saveData = async () => {
-    await dexieDB.transaction('rw', dexieDB.tables, async () => {
-        await dexieDB.characters.bulkPut(db.characters);
-        await dexieDB.groups.bulkPut(db.groups);
-        await dexieDB.worldBooks.bulkPut(db.worldBooks);
-        await dexieDB.myStickers.bulkPut(db.myStickers);
-        if (dexieDB.archives) await dexieDB.archives.bulkPut(db.archives || []);
-
-        const settingsPromises = globalSettingKeys.map(key => {
-            if (db[key] !== undefined) {
-                return dexieDB.globalSettings.put({ key: key, value: db[key] });
+    // iOS/Safari IndexedDB 偶发对 bulkPut 报 Failed to delete record from object store。
+    // 改为逐条 put，牺牲一点速度，换稳定性；不改变数据结构。
+    try {
+        await dexieDB.transaction('rw', dexieDB.tables, async () => {
+            for (const character of (db.characters || [])) {
+                if (character && character.id) await dexieDB.characters.put(character);
             }
-            return null;
-        }).filter(p => p);
-        await Promise.all(settingsPromises);
-    });
+            for (const group of (db.groups || [])) {
+                if (group && group.id) await dexieDB.groups.put(group);
+            }
+            for (const worldBook of (db.worldBooks || [])) {
+                if (worldBook && worldBook.id) await dexieDB.worldBooks.put(worldBook);
+            }
+            for (const sticker of (db.myStickers || [])) {
+                if (sticker && sticker.id) await dexieDB.myStickers.put(sticker);
+            }
+            if (dexieDB.archives) {
+                for (const archive of (db.archives || [])) {
+                    if (archive && archive.id) await dexieDB.archives.put(archive);
+                }
+            }
+
+            for (const key of globalSettingKeys) {
+                if (db[key] !== undefined) {
+                    await dexieDB.globalSettings.put({ key: key, value: db[key] });
+                }
+            }
+        });
+    } catch (e) {
+        console.error('[OVO保存] 逐条保存失败:', e);
+        throw e;
+    }
 };
 
 const loadData = async () => {

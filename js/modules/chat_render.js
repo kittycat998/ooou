@@ -1904,14 +1904,30 @@ window.sendPayResponse = async function(msgId, action) {
 
 
 
+
+function _ovoIsChatRoomActuallyVisible(targetChatId, targetChatType) {
+    try {
+        const room = document.getElementById('chat-room-screen');
+        const isRoomVisible = room && (
+            room.classList.contains('active') ||
+            room.style.display === 'block' ||
+            (!room.hidden && getComputedStyle(room).display !== 'none' && getComputedStyle(room).visibility !== 'hidden')
+        );
+        return !!(isRoomVisible && currentChatId === targetChatId && currentChatType === targetChatType && !document.hidden);
+    } catch (e) {
+        return currentChatId === targetChatId && currentChatType === targetChatType && !document.hidden;
+    }
+}
+
+
 function _ovoNotifyIncomingMessage(message, targetChatId, targetChatType) {
     try {
         if (!message || message.role === 'user' || message.isThinking) return;
         if (!window.OVOKeepAlive || typeof window.OVOKeepAlive.notify !== 'function') return;
 
-        // 只在页面隐藏/后台，或消息不是当前打开会话时发系统通知，避免前台聊天时疯狂弹。
-        const isOffscreen = document.hidden || targetChatId !== currentChatId || targetChatType !== currentChatType;
-        if (!isOffscreen) return;
+        // 只有真的停留在对应聊天房间时才算已读；人在聊天列表/别的页面也要算未读。
+        const isReadingThisChat = _ovoIsChatRoomActuallyVisible(targetChatId, targetChatType);
+        if (isReadingThisChat) return;
 
         let senderName = 'OVO';
         let senderAvatar = './manifest.json';
@@ -1965,7 +1981,8 @@ function _ovoNotifyIncomingMessage(message, targetChatId, targetChatType) {
 
 function addMessageBubble(message, targetChatId, targetChatType) {
     _ovoNotifyIncomingMessage(message, targetChatId, targetChatType);
-    if (targetChatId !== currentChatId || targetChatType !== currentChatType) {
+    const isReadingThisChat = _ovoIsChatRoomActuallyVisible(targetChatId, targetChatType);
+    if (!isReadingThisChat) {
         const senderChat = (targetChatType === 'private')
             ? db.characters.find(c => c.id === targetChatId)
             : db.groups.find(g => g.id === targetChatId);

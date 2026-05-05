@@ -25,6 +25,7 @@
     let keepAudio = null;
     let wakeLock = null;
     let statusEl = null;
+    let audioUnlockBound = false;
 
     function loadSettings() {
         try {
@@ -59,8 +60,8 @@
     }
 
     function silentWavDataUri() {
-        // 很短的静音 wav，循环播放用于维持音频会话。用户点击开启后才播放。
-        return 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+        // 使用真实静音/低音量 mp3 文件，比极短 data wav 更容易被 iOS 当作有效音频会话。
+        return 'https://files.catbox.moe/qx14i5.mp3';
     }
 
     async function ensureServiceWorker() {
@@ -145,8 +146,7 @@
         wakeLock = null;
     }
 
-    async function startAudioKeepAlive() {
-        if (!settings.audioMode) return;
+    function ensureKeepAudioElement() {
         if (!keepAudio) {
             keepAudio = document.getElementById('ovo-keepalive-audio');
             if (!keepAudio) {
@@ -155,18 +155,77 @@
                 keepAudio.loop = true;
                 keepAudio.preload = 'auto';
                 keepAudio.playsInline = true;
+                keepAudio.setAttribute('playsinline', '');
+                keepAudio.setAttribute('webkit-playsinline', '');
                 keepAudio.src = silentWavDataUri();
                 keepAudio.style.display = 'none';
                 document.body.appendChild(keepAudio);
             }
         }
+        try { keepAudio.volume = 0.01; } catch (e) {}
+        return keepAudio;
+    }
+
+    function bindAudioUnlockOnce() {
+        if (audioUnlockBound) return;
+        audioUnlockBound = true;
+
+        const unlock = () => {
+            audioUnlockBound = false;
+            document.removeEventListener('touchstart', unlock, true);
+            document.removeEventListener('click', unlock, true);
+            if (!settings.audioMode) return;
+
+            try {
+                const a = ensureKeepAudioElement();
+                const p = a.play();
+                if (p && p.catch) {
+                    p.then(() => {
+                        console.log('[OVO保活] 静音音频已通过用户手势解锁');
+                        updateStatus();
+                    }).catch(e => {
+                        console.warn('[OVO保活] 用户手势解锁静音音频失败:', e);
+                    });
+                }
+            } catch (e) {
+                console.warn('[OVO保活] 用户手势解锁异常:', e);
+            }
+        };
+
+        // 参考字卡：首次播放失败后，等待下一次触摸/点击再解锁音频会话
+        document.addEventListener('touchstart', unlock, { once: true, capture: true });
+        document.addEventListener('click', unlock, { once: true, capture: true });
+        console.log('[OVO保活] 已等待下一次点击/触摸以解锁静音音频');
+    }
+
+    async function startAudioKeepAlive() {
+        if (!settings.audioMode) return false;
+        const a = ensureKeepAudioElement();
         try {
-            keepAudio.volume = 0.001;
-            await keepAudio.play();
+            const p = a.play();
+            if (p && p.then) await p;
             console.log('[OVO保活] 静音音频保活已启动');
+            updateStatus();
+            return true;
         } catch (e) {
-            console.warn('[OVO保活] 静音音频播放失败，浏览器可能禁止后台音频:', e);
-            // 不再反复弹提示。通知和心跳仍可继续工作。
+            console.warn('[OVO保活] 静音音频播放失败，等待用户点击/触摸解锁:', e);
+            bindAudioUnlockOnce();
+            updateStatus();
+            return false;
+        }
+    }
+
+    function kickAudioKeepAliveByGesture() {
+        // 在用户点击事件里同步触发，但不 await，避免按钮卡住；失败时 startAudioKeepAlive 会绑定下一次点击解锁。
+        if (!settings.audioMode) return;
+        try {
+            startAudioKeepAlive().catch(e => {
+                console.warn('[OVO保活] 用户手势唤醒静音音频失败:', e);
+                bindAudioUnlockOnce();
+            });
+        } catch (e) {
+            console.warn('[OVO保活] 启动静音音频异常:', e);
+            bindAudioUnlockOnce();
         }
     }
 
@@ -261,7 +320,8 @@
             <div><b>状态：</b>${mode} / ${hidden}</div>
             <div><b>通知：</b>${perm}</div>
             <div><b>心跳：</b>${formatTime(settings.lastHeartbeat)}</div>
-            <div style="opacity:.65;margin-top:4px;">纯前端保活不能保证关闭网页后仍推送；音频失败也不影响测试通知/消息通知。</div>
+            <div><b>静音音频：</b>${keepAudio && !keepAudio.paused ? '播放中' : (audioUnlockBound ? '等待点击解锁' : '未播放')}</div>
+            <div style="opacity:.65;margin-top:4px;">纯前端保活不能保证关闭网页后仍推送；若音频未播放，请在页面任意位置点一下解锁。</div>
         `;
     }
 
@@ -330,11 +390,21 @@
         panel.querySelector('#ovo-keepalive-permission').addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            await requestNotifyPermission();
+            // 先在用户手势里踢静音音频，不等待，避免 Notification 权限弹窗后失去音频激活时机
+            kickAudioKeepAliveByGesture();
+            const ok = await requestNotifyPermission();
+            if (!settings.enabled) {
+                settings.lastHeartbeat = Date.now();
+                saveSettings();
+                updateStatus();
+            }
+            return ok;
         });
         panel.querySelector('#ovo-keepalive-test').addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
+            // 先踢音频，但不 await；测试通知立刻继续发，避免按钮长时间像没反应
+            kickAudioKeepAliveByGesture();
             const ok = await showSystemNotification('OVO 后台保活', '这是一条测试通知');
             toast(ok ? '测试通知已发送' : '通知发送失败，请检查权限', ok ? 'success' : 'warning');
         });

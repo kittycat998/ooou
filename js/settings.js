@@ -1029,6 +1029,8 @@ function loadSettingsToSidebar() {
         if (charNoReplyEl) charNoReplyEl.checked = e.characterNoReplyEnabled || false;
         const charChangeRemarkEl = document.getElementById('setting-char-change-remark-enabled');
         if (charChangeRemarkEl) charChangeRemarkEl.checked = e.characterChangeRemarkEnabled || false;
+        const charRemarkAwareEl = document.getElementById('setting-char-remark-aware-enabled');
+        if (charRemarkAwareEl) charRemarkAwareEl.checked = e.characterRemarkAwareEnabled || false;
 
         // 加载小剧场设置
         const charTheaterEnabledEl = document.getElementById('setting-char-theater-enabled');
@@ -1424,9 +1426,11 @@ async function saveSettingsFromSidebar() {
     const e = db.characters.find(e => e.id === currentChatId);
     if (e) {
         e.avatar = document.getElementById('setting-char-avatar-preview').src;
+        const oldRemarkNameForAware = e.remarkName || e.realName || e.name || '';
         const realNameInput = document.getElementById('setting-char-real-name');
         if (realNameInput) e.realName = (realNameInput.value || '').trim();
-        e.remarkName = document.getElementById('setting-char-remark').value;
+        const newRemarkNameFromInput = document.getElementById('setting-char-remark').value;
+        e.remarkName = newRemarkNameFromInput;
         e.persona = document.getElementById('setting-char-persona').value;
         
         if (e.source === 'forum' || e.source === 'peek') {
@@ -1480,6 +1484,24 @@ async function saveSettingsFromSidebar() {
         e.characterNoReplyEnabled = charNoReplyEl ? charNoReplyEl.checked : false;
         const charChangeRemarkEl = document.getElementById('setting-char-change-remark-enabled');
         e.characterChangeRemarkEnabled = charChangeRemarkEl ? charChangeRemarkEl.checked : false;
+        const charRemarkAwareEl = document.getElementById('setting-char-remark-aware-enabled');
+        e.characterRemarkAwareEnabled = charRemarkAwareEl ? charRemarkAwareEl.checked : false;
+
+        if (e.characterRemarkAwareEnabled && oldRemarkNameForAware && newRemarkNameFromInput && oldRemarkNameForAware !== newRemarkNameFromInput) {
+            e.pendingUserRemarkChange = {
+                oldName: oldRemarkNameForAware,
+                newName: newRemarkNameFromInput,
+                timestamp: Date.now()
+            };
+            if (!Array.isArray(e.history)) e.history = [];
+            e.history.push({
+                id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+                role: 'assistant',
+                content: `[system-display:你把${oldRemarkNameForAware || '角色'}在手机里的备注名修改为“${newRemarkNameFromInput}”]`,
+                timestamp: Date.now(),
+                isContextDisabled: true
+            });
+        }
 
         // 保存小剧场设置
         const charTheaterEnabledSave = document.getElementById('setting-char-theater-enabled');

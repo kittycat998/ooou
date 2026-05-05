@@ -455,7 +455,7 @@ function renderChatList() {
 
         const unreadCount = chat.unreadCount || 0;
         const unreadClass = unreadCount > 0 ? 'visible' : '';
-        const unreadText = unreadCount > 99 ? '99+' : unreadCount;
+        const unreadText = unreadCount > 99 ? '99+' : (unreadCount > 0 ? `${unreadCount}` : '');
 
         li.innerHTML = `
             <img src="${chat.avatar}" alt="${itemName}" class="chat-avatar ${avatarClass}">
@@ -472,7 +472,7 @@ function renderChatList() {
             </div>
             <div class="item-meta-container">
                 <span class="item-time">${timeString}</span>
-                <span class="unread-badge ${unreadClass}">${unreadText}</span>
+                <span class="unread-text ${unreadClass}">${unreadText}</span>
             </div>`;
 
         chatListContainer.appendChild(li);
