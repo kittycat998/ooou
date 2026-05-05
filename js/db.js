@@ -174,8 +174,113 @@ const globalSettingKeys = [
 ];
 if (typeof window !== 'undefined') window.globalSettingKeysForBackup = globalSettingKeys;
 
-const appVersion = "3.15.1";
+const appVersion = "v52-remark-aware-2026-05-06";
 const updateLog = [
+    {
+        version: "v52",
+        date: "2026-05-06",
+        notes: [
+            "基于 v50.4.2-character-settings-save-fix 新增「角色感知我给他改备注」。",
+            "开关默认关闭；开启后，用户修改角色备注会记录一次 pending 事件。",
+            "下一轮私聊回复时注入一次备注变化感知，回复成功后自动清除，不写入灰色系统提示。"
+        ]
+    },
+    {
+        version: "v50.4.2-character-settings-save-fix",
+        date: "2026-05-06",
+        notes: [
+            "基于 v50.4.2-screen-memory，只修复角色设置「保存所有更改」偶发卡顿。",
+            "角色设置保存改为顺序局部保存当前角色和 novelAiSettings，不再触发全库 saveData。",
+            "保存按钮增加保存中状态和失败提示；渲染延后一拍，避免保存反馈被重渲染卡住。"
+        ]
+    },
+    {
+        version: "v50.4.2",
+        date: "2026-05-06",
+        notes: [
+            "新增：页面位置记忆。导入/导出、文件选择或下载后如果页面被系统恢复到主页，会尽量自动回到原页面。",
+            "恢复聊天室时会优先走 openChatRoom，避免标题、背景、消息区和气泡样式丢状态。",
+            "恢复日记/更多/联系人/API 设置等页面后，会做一次轻量刷新，减少导入导出后的空白或默认值回填问题。",
+            "不改导入导出核心数据逻辑，只补页面恢复兜底。"
+        ]
+    },
+    {
+        version: "v50.4.1",
+        date: "2026-05-04",
+        notes: [
+            "v50.4.1：局部保存 await 清洁版。",
+            "在 v50.4-local-save-optimized 基础上，补齐 API 预设、副 API 预设、论坛设置、偷看补充人设等局部保存的 await。",
+            "降低保存后立刻刷新/退出时设置尚未落盘的概率。",
+            "不新增备注感知，不碰编辑消息增强。"
+        ]
+    },
+    {
+        version: "v50.4-local-save-optimized",
+        date: "2026-05-06",
+        notes: [
+            "保存设置卡顿优化：新增 globalSettings 局部保存，API/副API/生图/论坛设置不再触发全库逐条保存。",
+            "偷看手机当前角色设置改为角色局部保存，避免一次设置保存扫完整个 IndexedDB。",
+            "保留原有 saveData 全量保存逻辑，用于导入、数据迁移和真正需要全量落库的场景。"
+        ]
+    },
+    {
+        version: "v50.4",
+        date: "2026-05-04",
+        notes: [
+            "v50.4：修复导入/恢复数据完成后整页刷新导致跳回最开头界面的问题。",
+            "完整导入、分类导入、GitHub 云端恢复完成后改为局部刷新当前界面，不再 window.location.reload。",
+            "继续保留 v50.3 老迁移不 delete、v50.2 启动保护、v50.1 固定键备份防回退。"
+        ]
+    },
+    {
+        version: "v50.3",
+        date: "2026-05-04",
+        notes: [
+            "v50.3：移除老 Dexie version(2) 迁移里删除旧 storage 记录的动作。",
+            "旧 storage 记录不再 delete，避免 iOS/Safari 在升级事务里 Failed to delete record from object store 导致数据库启动失败。",
+            "继续保留 v50.2 启动期数据库保护、v50.1 固定键备份防回退、v50 逐条 put 保存。"
+        ]
+    },
+    {
+        version: "v50.2",
+        date: "2026-05-04",
+        notes: [
+            "v50.2：新增启动期数据库保护。",
+            "loadData/旧数据检查未结束前，saveData 会短暂等待，避免刚打开网页时保存/删除抢 IndexedDB。",
+            "移除 loadData 内部的立即保存，降低首次打开时报 Failed to delete record from object store 的概率。",
+            "继续保留 v50.1 的固定键备份防回退与逐条 put 存储清洁。"
+        ]
+    },
+    {
+        version: "v50.1",
+        date: "2026-05-04",
+        notes: [
+            "v50.1：存储清洁底包。",
+            "从 v50 稳定版接入固定键备份防回退逻辑，旧 localStorage 只在 IndexedDB 为空时迁移。",
+            "旧 localStorage 会移动到固定备份键 gemini-chat-app-db-backup-before-migration，不再直接删除唯一副本。",
+            "老 Dexie version(2) 迁移里的 bulkPut 改为逐条 put，降低 iOS/Safari 抽风概率。",
+            "不包含备注感知、编辑消息增强、局部保存、通知头像等试验功能。"
+        ]
+    },
+    {
+        version: "v50",
+        date: "2026-05-04",
+        notes: [
+            "v50：修复 v49 打开后可能出现 characters.bulkPut 保存失败的问题。",
+            "保留 v42 稳定底包和更新弹窗。",
+            "保存方式从批量 bulkPut 改成逐条 put，降低 iOS IndexedDB 抽风概率。"
+        ]
+    },
+    {
+        version: "v49",
+        date: "2026-05-04",
+        notes: [
+            "v49：回退到稳定 v42 作为底包。",
+            "保留：后台保活真实 mp3、未读灰色小圈数字。",
+            "新增：更新弹窗提示。以后每次发新版，只要修改 appVersion，就会自动弹出更新日志。",
+            "舍弃：v43-v48 的编辑消息增强、引用增强、局部保存试验，避免按钮卡死和保存异常。"
+        ]
+    },
     {
         version: "3.15.1",
         date: "2026-03-15",
@@ -682,10 +787,26 @@ function initDatabase() {
         if (oldData && oldData.value) {
             console.log("Old data found, starting migration.");
             const data = JSON.parse(oldData.value);
-            if (data.characters) await tx.table('characters').bulkPut(data.characters);
-            if (data.groups) await tx.table('groups').bulkPut(data.groups);
-            if (data.worldBooks) await tx.table('worldBooks').bulkPut(data.worldBooks);
-            if (data.myStickers) await tx.table('myStickers').bulkPut(data.myStickers);
+            if (Array.isArray(data.characters)) {
+                for (const character of data.characters) {
+                    if (character && character.id) await tx.table('characters').put(character);
+                }
+            }
+            if (Array.isArray(data.groups)) {
+                for (const group of data.groups) {
+                    if (group && group.id) await tx.table('groups').put(group);
+                }
+            }
+            if (Array.isArray(data.worldBooks)) {
+                for (const worldBook of data.worldBooks) {
+                    if (worldBook && worldBook.id) await tx.table('worldBooks').put(worldBook);
+                }
+            }
+            if (Array.isArray(data.myStickers)) {
+                for (const sticker of data.myStickers) {
+                    if (sticker && sticker.id) await tx.table('myStickers').put(sticker);
+                }
+            }
             
             const settingsToMigrate = {
                 apiSettings: data.apiSettings || {},
@@ -719,10 +840,10 @@ function initDatabase() {
                 tx.table('globalSettings').put({ key, value })
             );
             await Promise.all(settingsPromises);
-            
-            await tx.table('storage').delete('章鱼喷墨机');
-            console.log("Migration complete. Old data removed.");
-        } else {
+            // 不再删除旧 storage 记录，避免 iOS/Safari 在升级事务里 delete 失败导致整个数据库打开失败。
+            // 旧 storage 表在后续 schema 中不再使用，保留它比启动失败更安全。
+            console.log("Migration complete. Old storage record kept for safety.");
+} else {
             console.log("No old data found to migrate.");
         }
     });
@@ -746,25 +867,130 @@ function initDatabase() {
 }
 
 // 数据保存与加载
-const saveData = async () => {
-    await dexieDB.transaction('rw', dexieDB.tables, async () => {
-        await dexieDB.characters.bulkPut(db.characters);
-        await dexieDB.groups.bulkPut(db.groups);
-        await dexieDB.worldBooks.bulkPut(db.worldBooks);
-        await dexieDB.myStickers.bulkPut(db.myStickers);
-        if (dexieDB.archives) await dexieDB.archives.bulkPut(db.archives || []);
+let _ovoDbLoading = false;
+let _ovoDbReady = false;
+let _ovoDbLastErrorAt = 0;
 
-        const settingsPromises = globalSettingKeys.map(key => {
-            if (db[key] !== undefined) {
-                return dexieDB.globalSettings.put({ key: key, value: db[key] });
+// 启动保护：loadData/迁移还没结束时，不允许自动保存抢 IndexedDB。
+// 用户主动保存如果撞上启动期，等几百毫秒再写，避免 iOS/Safari 刚开库时 Failed to delete record。
+async function _ovoWaitForDbReady(maxWaitMs = 2500) {
+    const start = Date.now();
+    while (_ovoDbLoading && Date.now() - start < maxWaitMs) {
+        await new Promise(resolve => setTimeout(resolve, 120));
+    }
+    return !_ovoDbLoading;
+}
+
+const saveData = async () => {
+    await _ovoWaitForDbReady();
+    // iOS/Safari IndexedDB 偶发对 bulkPut 报 Failed to delete record from object store。
+    // 改为逐条 put，牺牲一点速度，换稳定性；不改变数据结构。
+    try {
+        await dexieDB.transaction('rw', dexieDB.tables, async () => {
+            for (const character of (db.characters || [])) {
+                if (character && character.id) await dexieDB.characters.put(character);
             }
-            return null;
-        }).filter(p => p);
-        await Promise.all(settingsPromises);
-    });
+            for (const group of (db.groups || [])) {
+                if (group && group.id) await dexieDB.groups.put(group);
+            }
+            for (const worldBook of (db.worldBooks || [])) {
+                if (worldBook && worldBook.id) await dexieDB.worldBooks.put(worldBook);
+            }
+            for (const sticker of (db.myStickers || [])) {
+                if (sticker && sticker.id) await dexieDB.myStickers.put(sticker);
+            }
+            if (dexieDB.archives) {
+                for (const archive of (db.archives || [])) {
+                    if (archive && archive.id) await dexieDB.archives.put(archive);
+                }
+            }
+
+            for (const key of globalSettingKeys) {
+                if (db[key] !== undefined) {
+                    await dexieDB.globalSettings.put({ key: key, value: db[key] });
+                }
+            }
+        });
+    } catch (e) {
+        _ovoDbLastErrorAt = Date.now();
+        console.error('[OVO保存] 逐条保存失败:', e);
+        throw e;
+    }
 };
 
+
+// 局部保存：设置页/预设页只改 globalSettings 时，不再触发全库逐条写入。
+// 这能避开“点保存设置 = characters/groups/worldBooks/stickers/archives 全扫一遍”的卡顿。
+const saveGlobalSettings = async (keys) => {
+    await _ovoWaitForDbReady();
+    const list = Array.isArray(keys) ? keys : [keys];
+    const validKeys = [...new Set(list)].filter(key => globalSettingKeys.includes(key) && db[key] !== undefined);
+    if (!validKeys.length) return;
+    try {
+        await dexieDB.transaction('rw', dexieDB.globalSettings, async () => {
+            for (const key of validKeys) {
+                await dexieDB.globalSettings.put({ key: key, value: db[key] });
+            }
+        });
+    } catch (e) {
+        _ovoDbLastErrorAt = Date.now();
+        console.error('[OVO保存] 局部设置保存失败:', e);
+        throw e;
+    }
+};
+
+const saveGlobalSetting = async (key) => saveGlobalSettings([key]);
+
+// 防止用户连续点保存时堆出多条全量保存任务。局部保存仍建议优先使用 saveGlobalSetting(s)。
+let _ovoSaveDataQueue = Promise.resolve();
+const saveDataQueued = async () => {
+    const run = () => saveData();
+    _ovoSaveDataQueue = _ovoSaveDataQueue.then(run, run);
+    return _ovoSaveDataQueue;
+};
+
+
+const saveCharacterData = async (characterOrId) => {
+    await _ovoWaitForDbReady();
+    const character = (typeof characterOrId === 'string')
+        ? (db.characters || []).find(c => c && c.id === characterOrId)
+        : characterOrId;
+    if (!character || !character.id) return;
+    try {
+        await dexieDB.characters.put(character);
+    } catch (e) {
+        _ovoDbLastErrorAt = Date.now();
+        console.error('[OVO保存] 角色局部保存失败:', e);
+        throw e;
+    }
+};
+
+const saveGroupData = async (groupOrId) => {
+    await _ovoWaitForDbReady();
+    const group = (typeof groupOrId === 'string')
+        ? (db.groups || []).find(g => g && g.id === groupOrId)
+        : groupOrId;
+    if (!group || !group.id) return;
+    try {
+        await dexieDB.groups.put(group);
+    } catch (e) {
+        _ovoDbLastErrorAt = Date.now();
+        console.error('[OVO保存] 群聊局部保存失败:', e);
+        throw e;
+    }
+};
+
+if (typeof window !== 'undefined') {
+    window.saveGlobalSetting = saveGlobalSetting;
+    window.saveGlobalSettings = saveGlobalSettings;
+    window.saveDataQueued = saveDataQueued;
+    window.saveCharacterData = saveCharacterData;
+    window.saveGroupData = saveGroupData;
+}
+
 const loadData = async () => {
+    _ovoDbLoading = true;
+    try {
     const tables = [
         dexieDB.characters.toArray(),
         dexieDB.groups.toArray(),
@@ -930,6 +1156,7 @@ const loadData = async () => {
         // 角色拉黑用户（角色主动拉黑）
         if (c.canBlockUser === undefined) c.canBlockUser = true;
         // 角色掌控模式：允许角色查看并操控用户手机
+        if (c.characterRemarkAwareEnabled === undefined) c.characterRemarkAwareEnabled = false;
         if (c.phoneControlEnabled === undefined) c.phoneControlEnabled = false;
         if (c.phoneControlViewLimit === undefined) c.phoneControlViewLimit = 10;
         if (!Array.isArray(c.phoneControlHistory)) c.phoneControlHistory = [];
@@ -954,7 +1181,7 @@ const loadData = async () => {
             c.userAvatarLibrary.push(...db.userAvatarLibrary);
         });
         delete db.userAvatarLibrary;
-        if (typeof saveData === 'function') saveData();
+        // 启动期先不立刻保存，避免 loadData 内部抢写库；初始化完成后再由用户操作/后续保存落盘。
     }
     db.groups.forEach(g => {
         if (g.isPinned === undefined) g.isPinned = false;
@@ -966,18 +1193,73 @@ const loadData = async () => {
         if (!g.callHistory) g.callHistory = [];
     });
     
-    // Handle old localStorage data if it exists
+    // Handle old localStorage data if it exists.
+    // v51.2 防回退保护：旧 localStorage 只允许在 IndexedDB 为空时迁移。
+    // 迁移完成或跳过后，不直接删除唯一副本，而是移动到固定备份键。
+    // 固定备份键每次覆盖旧备份，只保留最新一份，避免 localStorage 无限膨胀。
     const oldLocalStorageData = localStorage.getItem('gemini-chat-app-db');
-    if(oldLocalStorageData) {
-        console.log("Found old localStorage data, migrating...");
-        const data = JSON.parse(oldLocalStorageData);
-        await dexieDB.transaction('rw', dexieDB.tables, async () => {
-            if (data.characters) await dexieDB.characters.bulkPut(data.characters);
-            if (data.groups) await dexieDB.groups.bulkPut(data.groups);
-        });
-        localStorage.removeItem('gemini-chat-app-db');
-        await loadData();
+    const oldLocalStorageBackupKey = 'gemini-chat-app-db-backup-before-migration';
+    const oldLocalStorageBackupTimeKey = 'gemini-chat-app-db-backup-time';
+
+    const backupAndRemoveOldLocalStorageData = () => {
+        try {
+            localStorage.setItem(oldLocalStorageBackupKey, oldLocalStorageData);
+            localStorage.setItem(oldLocalStorageBackupTimeKey, new Date().toISOString());
+            localStorage.removeItem('gemini-chat-app-db');
+            console.log("Old localStorage data moved to fixed backup key:", oldLocalStorageBackupKey);
+        } catch (backupError) {
+            console.error("Failed to back up old localStorage data. Keeping original key untouched for safety.", backupError);
+        }
+    };
+
+    if (oldLocalStorageData) {
+        console.log("Found old localStorage data, checking whether migration is needed...");
+        try {
+            const existingCharacterCount = await dexieDB.characters.count();
+            const existingGroupCount = await dexieDB.groups.count();
+
+            if (existingCharacterCount === 0 && existingGroupCount === 0) {
+                console.log("IndexedDB is empty, migrating old localStorage data...");
+                const data = JSON.parse(oldLocalStorageData);
+
+                await dexieDB.transaction('rw', dexieDB.tables, async () => {
+                    if (Array.isArray(data.characters)) {
+                        for (const character of data.characters) {
+                            if (character && character.id) {
+                                await dexieDB.characters.put(character);
+                            }
+                        }
+                    }
+
+                    if (Array.isArray(data.groups)) {
+                        for (const group of data.groups) {
+                            if (group && group.id) {
+                                await dexieDB.groups.put(group);
+                            }
+                        }
+                    }
+                });
+
+                backupAndRemoveOldLocalStorageData();
+                await loadData();
+                console.log("Old localStorage migration complete. Old data kept in fixed backup key.");
+            } else {
+                console.warn("IndexedDB already has data. Skipping old localStorage migration to avoid rollback.");
+                backupAndRemoveOldLocalStorageData();
+            }
+        } catch (e) {
+            console.error("Old localStorage migration check failed. Keeping old localStorage data untouched for safety.", e);
+        }
     }
+    _ovoDbReady = true;
+    } catch (e) {
+        _ovoDbLastErrorAt = Date.now();
+        console.error('[OVO加载] 数据库加载失败:', e);
+        throw e;
+    } finally {
+        _ovoDbLoading = false;
+    }
+
 };
 
 // 存储分析工具

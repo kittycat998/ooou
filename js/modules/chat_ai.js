@@ -1299,6 +1299,10 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             }
         }
 
+        if (targetChatType === 'private' && chat.characterRemarkAwareEnabled && chat.pendingUserRemarkChange) {
+            delete chat.pendingUserRemarkChange;
+        }
+
         await saveData();
         renderChatList();
 
@@ -1517,6 +1521,14 @@ function generatePrivateSystemPrompt(character, opts) {
     }
     if (worldBooksAfter) {
         prompt += `${worldBooksAfter}\n`;
+    }
+    if (character.characterRemarkAwareEnabled && character.pendingUserRemarkChange) {
+        const remarkChange = character.pendingUserRemarkChange;
+        const oldRemark = remarkChange.oldRemarkName || '';
+        const newRemark = remarkChange.newRemarkName || '';
+        if (oldRemark && newRemark && oldRemark !== newRemark) {
+            prompt += `\n<user_remark_change>\n用户刚刚把你在用户这里的备注从「${oldRemark}」改成了「${newRemark}」。你可以自然感知这件事，并知道自己在用户这里当前的备注是「${newRemark}」。不要像系统播报一样生硬复述，是否提及、如何反应都应符合你的性格和当前对话气氛。\n</user_remark_change>\n`;
+        }
     }
     prompt += `</char_settings>\n\n`;
 

@@ -39,7 +39,7 @@ function setupPeekFeature() {
                 char.peekData = {};
                 char.peekViewedByUser = [];
                 char.lastPeekViewedAt = undefined;
-                await saveData();   
+                await saveCharacterData(char);   
                 showToast('偷看数据已清空');
             }
         }
@@ -192,7 +192,7 @@ function setupPeekFeature() {
         character.peekScreenSettings.browserDetailWords.min = parseNum('peek-browser-detail-min-words', 200);
         character.peekScreenSettings.browserDetailWords.max = parseNum('peek-browser-detail-max-words', 500);
 
-        await saveData();
+        await saveCharacterData(character);
         renderPeekScreen(); 
         showToast('已保存！');
         peekWallpaperModal.classList.remove('visible');
@@ -1115,11 +1115,11 @@ function openPeekEditPersonaModal() {
     document.getElementById('peek-edit-persona-modal')?.classList.add('visible');
 }
 
-function savePeekEditPersona() {
+async function savePeekEditPersona() {
     if (!currentPeekConversation) return;
     const ta = document.getElementById('peek-edit-persona-textarea');
     if (ta) currentPeekConversation.supplementPersona = (ta.value || '').trim();
-    saveData();
+    await saveCharacterData(currentChatId);
     document.getElementById('peek-edit-persona-modal')?.classList.remove('visible');
     renderPeekConversation(currentPeekConversation);
     showToast('已保存');

@@ -1,5 +1,42 @@
 // --- 教程与备份功能 (js/modules/tutorial.js) ---
 
+
+function ovoRefreshAfterDataImport(sourceLabel = '导入') {
+    // 导入后不再整页 reload，避免 iOS/PWA 直接回到最开头界面。
+    // 只刷新当前内存里的列表/当前聊天/设置面板；如果当前聊天不存在，就退到聊天列表而不是主页。
+    try {
+        if (typeof renderChatList === 'function') renderChatList();
+
+        const chatStillExists = currentChatType === 'group'
+            ? (db.groups || []).some(g => g.id === currentChatId)
+            : (db.characters || []).some(c => c.id === currentChatId);
+
+        if (!chatStillExists && typeof switchScreen === 'function') {
+            switchScreen('chat-list-screen');
+            showToast(`${sourceLabel}完成，当前窗口不存在，已回到聊天列表`);
+            return;
+        }
+
+        if (typeof renderMessages === 'function' && currentChatId) {
+            try { renderMessages(false, true); } catch (e) { console.warn('[导入刷新] renderMessages failed:', e); }
+        }
+        if (typeof loadSettingsToSidebar === 'function' && currentChatType === 'private') {
+            try { loadSettingsToSidebar(); } catch (e) { console.warn('[导入刷新] loadSettings failed:', e); }
+        }
+        if (typeof loadGroupSettingsToSidebar === 'function' && currentChatType === 'group') {
+            try { loadGroupSettingsToSidebar(); } catch (e) { console.warn('[导入刷新] loadGroupSettings failed:', e); }
+        }
+        if (typeof renderJournalList === 'function') {
+            try { renderJournalList(); } catch (e) {}
+        }
+        showToast(`${sourceLabel}完成，已刷新当前界面`);
+    } catch (e) {
+        console.warn('[导入刷新] 局部刷新失败，保持当前界面:', e);
+        showToast(`${sourceLabel}完成`);
+    }
+}
+
+
 function setupTutorialApp() {
     const tutorialContentArea = document.getElementById('tutorial-content-area');
     tutorialContentArea.addEventListener('click', (e) => {
@@ -119,7 +156,7 @@ function showUpdateModal() {
 
     // 强制阅读倒计时
     const originalText = "我知道了";
-    let timeLeft = 10;
+    let timeLeft = 2;
     closeBtn.disabled = true;
     closeBtn.textContent = `请阅读 (${timeLeft}s)`;
     closeBtn.style.opacity = '0.6';
@@ -1188,10 +1225,8 @@ function renderTutorialContent() {
                 const importResult = await importBackupData(data);
 
                 if (importResult.success) {
-                    showToast(`数据导入成功！${importResult.message} 应用即将刷新。`);
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
+                    ovoRefreshAfterDataImport('数据导入');
+                    showToast(`数据导入成功！${importResult.message}`);
                 } else {
                     showToast(`导入失败: ${importResult.error}`);
                 }
@@ -1395,8 +1430,8 @@ function renderTutorialContent() {
                 showToast('正在分类导入...');
                 const result = await importPartialBackupData(data);
                 if (result.success) {
-                    showToast(result.message + ' 应用即将刷新。');
-                    setTimeout(() => window.location.reload(), 1500);
+                    ovoRefreshAfterDataImport('分类导入');
+                    showToast(result.message);
                 } else {
                     showToast('分类导入失败: ' + result.error);
                 }
@@ -2251,10 +2286,10 @@ const GitHubMgr = {
             const importResult = await importBackupData(data);
 
             if (importResult.success) {
-                showToast(`恢复成功！${importResult.message} 应用即将刷新。`);
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1500);
+                ovoRefreshAfterDataImport('云端恢复');
+                showToast(`恢复成功！${importResult.message}`);
+                btn.innerText = originalText;
+                btn.style.pointerEvents = 'auto';
             } else {
                 throw new Error(importResult.error);
             }

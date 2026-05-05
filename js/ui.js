@@ -21,6 +21,123 @@ const messageInput = document.getElementById('message-input');
 const getReplyBtn = document.getElementById('get-reply-btn');
 const regenerateBtn = document.getElementById('regenerate-btn');
 
+
+// --- 页面位置记忆：避免导入/导出、文件选择、下载后被系统恢复到主界面 ---
+const OVO_LAST_SCREEN_KEY = 'ovo:lastActiveScreen';
+const OVO_LAST_CHAT_ID_KEY = 'ovo:lastChatId';
+const OVO_LAST_CHAT_TYPE_KEY = 'ovo:lastChatType';
+const OVO_LAST_SCREEN_TS_KEY = 'ovo:lastScreenTs';
+
+function ovoRememberScreen(targetId) {
+    try {
+        if (!targetId || !document.getElementById(targetId)) return;
+        sessionStorage.setItem(OVO_LAST_SCREEN_KEY, targetId);
+        sessionStorage.setItem(OVO_LAST_SCREEN_TS_KEY, String(Date.now()));
+
+        if (typeof currentChatId !== 'undefined' && currentChatId) {
+            sessionStorage.setItem(OVO_LAST_CHAT_ID_KEY, String(currentChatId));
+        }
+        if (typeof currentChatType !== 'undefined' && currentChatType) {
+            sessionStorage.setItem(OVO_LAST_CHAT_TYPE_KEY, String(currentChatType));
+        }
+    } catch (e) {
+        console.warn('[页面位置记忆] 写入失败:', e);
+    }
+}
+
+function ovoGetActiveScreenId() {
+    const active = document.querySelector('.screen.active');
+    return active ? active.id : '';
+}
+
+function ovoChatExists(chatId, chatType) {
+    try {
+        if (!chatId || !chatType || typeof db === 'undefined' || !db) return false;
+        if (chatType === 'private') return Array.isArray(db.characters) && db.characters.some(c => c && String(c.id) === String(chatId));
+        if (chatType === 'group') return Array.isArray(db.groups) && db.groups.some(g => g && String(g.id) === String(chatId));
+    } catch (e) {}
+    return false;
+}
+
+function ovoRefreshRestoredScreen(screenId) {
+    try {
+        if (screenId === 'memory-journal-screen' && typeof renderJournalList === 'function') renderJournalList();
+        if (screenId === 'chat-list-screen' && typeof renderChatList === 'function') renderChatList();
+        if (screenId === 'contacts-screen') {
+            if (typeof renderContactList === 'function') renderContactList();
+            if (typeof renderMyProfile === 'function') renderMyProfile();
+        }
+        if (screenId === 'more-screen' && typeof renderMoreScreen === 'function') renderMoreScreen();
+        if (screenId === 'forum-screen' && typeof renderForumScreen === 'function') renderForumScreen();
+        if (screenId === 'peek-screen' && typeof renderPeekScreen === 'function') renderPeekScreen();
+        if (screenId === 'api-settings-screen') {
+            const fn = window.refreshAllApiSettingsUI || window.refreshMainApiSettingsUI;
+            if (typeof fn === 'function') setTimeout(() => fn(), 30);
+        }
+    } catch (e) {
+        console.warn('[页面位置记忆] 恢复后刷新失败:', e);
+    }
+}
+
+function ovoRestoreLastScreen(reason = 'auto') {
+    try {
+        const lastScreen = sessionStorage.getItem(OVO_LAST_SCREEN_KEY);
+        if (!lastScreen || lastScreen === 'home-screen') return false;
+        if (!document.getElementById(lastScreen)) return false;
+
+        // 没有数据时先不恢复，等 init/loadData 完成后的重试。
+        if (typeof db === 'undefined' || !db || !Array.isArray(db.characters) || !Array.isArray(db.groups)) return false;
+
+        const lastChatId = sessionStorage.getItem(OVO_LAST_CHAT_ID_KEY) || '';
+        const lastChatType = sessionStorage.getItem(OVO_LAST_CHAT_TYPE_KEY) || '';
+
+        if (lastChatId && lastChatType && ovoChatExists(lastChatId, lastChatType)) {
+            currentChatId = lastChatId;
+            currentChatType = lastChatType;
+        }
+
+        // 聊天室需要走 openChatRoom，才能恢复标题、背景、气泡样式和消息区。
+        if (lastScreen === 'chat-room-screen') {
+            if (lastChatId && lastChatType && ovoChatExists(lastChatId, lastChatType) && typeof openChatRoom === 'function') {
+                openChatRoom(lastChatId, lastChatType);
+                return true;
+            }
+            return false;
+        }
+
+        switchScreen(lastScreen);
+        ovoRefreshRestoredScreen(lastScreen);
+        console.log('[页面位置记忆] 已恢复到:', lastScreen, reason);
+        return true;
+    } catch (e) {
+        console.warn('[页面位置记忆] 恢复失败:', e);
+        return false;
+    }
+}
+
+function ovoScheduleRestoreLastScreen(reason = 'auto') {
+    // 分几次重试：兼容 PWA / Safari 文件选择器返回、以及 init/loadData 比较慢的情况。
+    [80, 250, 600, 1200, 2200].forEach(delay => {
+        setTimeout(() => {
+            const current = ovoGetActiveScreenId();
+            const last = (() => { try { return sessionStorage.getItem(OVO_LAST_SCREEN_KEY); } catch(e) { return ''; } })();
+            if (last && last !== 'home-screen' && (current === 'home-screen' || !current)) {
+                ovoRestoreLastScreen(reason + ':' + delay);
+            }
+        }, delay);
+    });
+}
+
+window.ovoRememberScreen = ovoRememberScreen;
+window.ovoRestoreLastScreen = ovoRestoreLastScreen;
+window.ovoScheduleRestoreLastScreen = ovoScheduleRestoreLastScreen;
+
+window.addEventListener('pageshow', () => ovoScheduleRestoreLastScreen('pageshow'));
+window.addEventListener('focus', () => ovoScheduleRestoreLastScreen('focus'));
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) ovoScheduleRestoreLastScreen('visibilitychange');
+});
+
 // 屏幕切换
 const switchScreen = (targetId) => {
     // 离开聊天室时停止 TTS 播放，避免退出后继续读
@@ -44,6 +161,7 @@ const switchScreen = (targetId) => {
     screens.forEach(screen => screen.classList.remove('active'));
     const targetScreen = document.getElementById(targetId);
     if (targetScreen) targetScreen.classList.add('active');
+    ovoRememberScreen(targetId);
     
     // 关闭所有覆盖层和侧边栏
     const overlays = document.querySelectorAll('.modal-overlay, .action-sheet-overlay, .settings-sidebar');

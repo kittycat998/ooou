@@ -36,7 +36,29 @@ function setupChatSettings() {
 
     document.getElementById('chat-settings-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        await saveSettingsFromSidebar();
+
+        const submitBtn = e.submitter || (e.target && e.target.querySelector('button[type="submit"]'));
+        if (submitBtn && submitBtn.disabled) return;
+
+        const oldText = submitBtn ? submitBtn.textContent : '';
+        try {
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = '保存中...';
+            }
+
+            await saveSettingsFromSidebar();
+        } catch (err) {
+            console.error('[角色设置] 保存失败:', err);
+            if (typeof showToast === 'function') {
+                showToast('保存失败，请退出重进后再试');
+            }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = oldText || '保存所有更改';
+            }
+        }
     });
 
     document.getElementById('chat-scroll-to-top-current-btn').addEventListener('click', () => {
@@ -898,7 +920,13 @@ function loadSettingsToSidebar() {
         if(nameDisplay) nameDisplay.textContent = e.remarkName;
         const realNameEl = document.getElementById('setting-char-real-name');
         if (realNameEl) realNameEl.value = e.realName || '';
-        document.getElementById('setting-char-remark').value = e.remarkName;
+        const remarkInput = document.getElementById('setting-char-remark');
+        if (remarkInput) {
+            remarkInput.value = e.remarkName;
+            remarkInput.dataset.oldRemarkNameForAware = e.remarkName || '';
+        }
+        const remarkAwareEl = document.getElementById('setting-character-remark-aware-enabled');
+        if (remarkAwareEl) remarkAwareEl.checked = !!e.characterRemarkAwareEnabled;
         document.getElementById('setting-char-persona').value = e.persona;
         
         if (e.source === 'forum' && db.forumUserProfile) {
@@ -1426,7 +1454,22 @@ async function saveSettingsFromSidebar() {
         e.avatar = document.getElementById('setting-char-avatar-preview').src;
         const realNameInput = document.getElementById('setting-char-real-name');
         if (realNameInput) e.realName = (realNameInput.value || '').trim();
-        e.remarkName = document.getElementById('setting-char-remark').value;
+        const remarkInputForAware = document.getElementById('setting-char-remark');
+        const oldRemarkNameForAware = remarkInputForAware ? (remarkInputForAware.dataset.oldRemarkNameForAware || '') : (e.remarkName || '');
+        const newRemarkNameForAware = remarkInputForAware ? (remarkInputForAware.value || '').trim() : (e.remarkName || '');
+        const remarkAwareEl = document.getElementById('setting-character-remark-aware-enabled');
+        e.characterRemarkAwareEnabled = !!(remarkAwareEl && remarkAwareEl.checked);
+        e.remarkName = newRemarkNameForAware;
+        if (e.characterRemarkAwareEnabled && oldRemarkNameForAware && newRemarkNameForAware && oldRemarkNameForAware !== newRemarkNameForAware) {
+            e.pendingUserRemarkChange = {
+                oldRemarkName: oldRemarkNameForAware,
+                newRemarkName: newRemarkNameForAware,
+                timestamp: Date.now()
+            };
+        }
+        if (remarkInputForAware) {
+            remarkInputForAware.dataset.oldRemarkNameForAware = newRemarkNameForAware || '';
+        }
         e.persona = document.getElementById('setting-char-persona').value;
         
         if (e.source === 'forum' || e.source === 'peek') {
@@ -1654,13 +1697,37 @@ async function saveSettingsFromSidebar() {
             e.phoneControlVisibleFolderIds = Array.from(phoneControlFolderCheckboxes).filter(cb => cb.checked).map(cb => cb.value);
         }
 
-        await saveData();
-        showToast('设置已保存！');
+        // 角色设置只保存当前角色，避免“保存所有更改”触发全库 saveData() 导致卡顿。
+        // 不使用 Promise.all，避免 iOS/Safari 小网页壳里并发 IndexedDB 写入卡死。
+        if (typeof saveCharacterData === 'function') {
+            await saveCharacterData(e);
+        } else if (typeof saveDataQueued === 'function') {
+            await saveDataQueued();
+        } else {
+            await saveData();
+        }
+
+        // NovelAI 配置属于全局设置，单独顺序保存，不和角色写入并发。
+        if (typeof saveGlobalSetting === 'function' && db && db.novelAiSettings !== undefined) {
+            await saveGlobalSetting('novelAiSettings');
+        }
+
+        if (typeof showToast === 'function') {
+            if (e.characterRemarkAwareEnabled && e.pendingUserRemarkChange) {
+                showToast('设置已保存，备注变化已记录。');
+            } else {
+                showToast('设置已保存！');
+            }
+        }
         chatRoomTitle.textContent = e.remarkName;
-        renderChatList();
-        // updateCustomBubbleStyle(currentChatId, e.customBubbleCss, e.useCustomBubbleCss); // 移除实时应用以防污染设置页
-        currentPage = 1;
-        renderMessages(false, true);
+
+        // 渲染聊天列表/消息区可能较重，延后一拍，先让保存按钮和提示及时反馈。
+        setTimeout(() => {
+            if (typeof renderChatList === 'function') renderChatList();
+            // updateCustomBubbleStyle(currentChatId, e.customBubbleCss, e.useCustomBubbleCss); // 移除实时应用以防污染设置页
+            currentPage = 1;
+            if (typeof renderMessages === 'function') renderMessages(false, true);
+        }, 60);
     }
 }
 
@@ -1928,7 +1995,7 @@ function setupApiSettingsApp() {
             streamEnabled: document.getElementById('stream-switch').checked, 
             temperature: parseFloat(document.getElementById('temperature-slider').value)
         };
-        await saveData();
+        await saveGlobalSetting('apiSettings');
         showToast('API设置已保存！')
     })
     
@@ -1955,9 +2022,9 @@ function setupApiSettingsApp() {
 function _getApiPresets() {
     return db.apiPresets || [];
 }
-function _saveApiPresets(arr) {
+async function _saveApiPresets(arr) {
     db.apiPresets = arr || [];
-    saveData();
+    await saveGlobalSetting('apiPresets');
 }
 
 function populateApiSelect() {
@@ -1973,7 +2040,7 @@ function populateApiSelect() {
     });
 }
 
-function saveCurrentApiAsPreset() {
+async function saveCurrentApiAsPreset() {
     const apiKeyEl = document.querySelector('#api-key');
     const apiUrlEl = document.querySelector('#api-url');
     const providerEl = document.querySelector('#api-provider');
@@ -1994,7 +2061,7 @@ function saveCurrentApiAsPreset() {
     const idx = presets.findIndex(p => p.name === name);
     const preset = {name: name, data: data};
     if (idx >= 0) presets[idx] = preset; else presets.push(preset);
-    _saveApiPresets(presets);
+    await _saveApiPresets(presets);
     populateApiSelect();
     showToast('API 预设已保存');
 }
@@ -2174,7 +2241,23 @@ function importApiPresets() {
                         db[k].forEach(p => { if (p && p.data) p.data = _normalizeImportedApiObj(p.data); });
                     });
 
-                    await saveData();
+                    await saveGlobalSettings([
+                        'apiSettings',
+                        'summaryApiSettings',
+                        'backgroundApiSettings',
+                        'supplementPersonaApiSettings',
+                        'peekApiSettings',
+                        'forumApiSettings',
+                        'theaterApiSettings',
+                        'novelAiSettings',
+                        'gptImageSettings',
+                        'imageGenerationProvider',
+                        'apiPresets',
+                        'summaryApiPresets',
+                        'backgroundApiPresets',
+                        'supplementPersonaApiPresets',
+                        'peekApiPresets'
+                    ]);
                     populateApiSelect();
                     openApiManageModal();
                     showToast('已导入全部 API 设置和预设');
@@ -2304,7 +2387,7 @@ function setupSubApiSettings(prefix, dbKey, presetsKey) {
         // 如果全部为空，则清空设置
         if (!urlEl.value.trim() && !keyEl.value.trim() && !modelEl.value) {
             db[dbKey] = {};
-            await saveData();
+            await saveGlobalSetting(dbKey);
             showToast(displayName + 'API设置已清空！');
             return;
         }
@@ -2315,7 +2398,7 @@ function setupSubApiSettings(prefix, dbKey, presetsKey) {
             key: keyEl.value,
             model: modelEl.value
         };
-        await saveData();
+        await saveGlobalSetting(dbKey);
         showToast(displayName + 'API设置已保存！');
     });
     
@@ -2379,7 +2462,7 @@ function setupSubApiPresets(prefix, dbKey, presetsKey) {
     });
     
     // 另存为预设
-    savePresetBtn.addEventListener('click', () => {
+    savePresetBtn.addEventListener('click', async () => {
         const providerEl = document.getElementById(`${prefix}-api-provider`);
         const urlEl = document.getElementById(`${prefix}-api-url`);
         const keyEl = document.getElementById(`${prefix}-api-key`);
@@ -2403,7 +2486,7 @@ function setupSubApiPresets(prefix, dbKey, presetsKey) {
         else presets.push(preset);
         
         db[presetsKey] = presets;
-        saveData();
+        await saveGlobalSetting(presetsKey);
         populatePresets();
         showToast('预设已保存');
     });
@@ -2435,11 +2518,11 @@ function setupSubApiPresets(prefix, dbKey, presetsKey) {
             delBtn.textContent = '删除';
             delBtn.className = 'btn btn-small';
             delBtn.style.cssText = 'background:#ff4444;color:white;padding:4px 12px;';
-            delBtn.onclick = () => {
+            delBtn.onclick = async () => {
                 if (confirm(`确定删除预设"${preset.name}"吗？`)) {
                     presets.splice(idx, 1);
                     db[presetsKey] = presets;
-                    saveData();
+                    await saveGlobalSetting(presetsKey);
                     renderPresetsList();
                     populatePresets();
                     showToast('预设已删除');
@@ -2481,7 +2564,7 @@ function setupSubApiPresets(prefix, dbKey, presetsKey) {
                     else db[presetsKey].push(preset);
                 });
                 
-                await saveData();
+                await saveGlobalSetting(presetsKey);
                 populatePresets();
                 showToast('预设已导入');
             } catch (err) {
@@ -2598,7 +2681,7 @@ function setupNovelAiSettings() {
                 artistTags: artistTagsEl ? artistTagsEl.value.trim() : '',
                 negativePrompt: negativePromptEl ? negativePromptEl.value : ''
             };
-            await saveData();
+            await saveGlobalSetting('novelAiSettings');
             showToast('NovelAI 生图设置已保存！');
         });
     }
@@ -2704,7 +2787,7 @@ function setupGptImageSettings() {
                 negativePrompt: negativePromptEl ? negativePromptEl.value.trim() : ''
             };
             if (providerEl) db.imageGenerationProvider = providerEl.value || 'novelai';
-            await saveData();
+            await saveGlobalSettings(['gptImageSettings', 'imageGenerationProvider']);
             showToast('GPT 生图设置已保存！');
         });
     }
@@ -2712,7 +2795,7 @@ function setupGptImageSettings() {
     if (providerEl) {
         providerEl.addEventListener('change', async () => {
             db.imageGenerationProvider = providerEl.value || 'novelai';
-            await saveData();
+            await saveGlobalSetting('imageGenerationProvider');
         });
     }
 

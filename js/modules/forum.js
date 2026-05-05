@@ -1044,11 +1044,11 @@ function renderForumPosts(posts, filter = 'all') {
 function forumInitUserProfile() {
     if (!db.forumUserProfile || typeof db.forumUserProfile !== 'object') {
         db.forumUserProfile = { username: '', avatar: 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg', bio: '', joinDate: Date.now() };
-        saveData();
+        saveGlobalSetting('forumUserProfile').catch(e => console.warn('[Forum] 保存用户资料失败:', e));
     }
     if (!db.forumUserProfile.username && db.forumUserProfile.joinDate) {
         db.forumUserProfile.username = '用户' + Math.floor(1000 + Math.random() * 9000);
-        saveData();
+        saveGlobalSetting('forumUserProfile').catch(e => console.warn('[Forum] 保存用户资料失败:', e));
     }
 }
 
@@ -1441,7 +1441,7 @@ function forumLoadSettings() {
     }
 }
 
-function forumSaveSettings() {
+async function forumSaveSettings() {
     const postsInput = document.getElementById('forum-posts-count-input');
     const minInput = document.getElementById('forum-comments-min-input');
     const maxInput = document.getElementById('forum-comments-max-input');
@@ -1497,7 +1497,7 @@ function forumSaveSettings() {
         temperature: tempSlider ? parseFloat(tempSlider.value) : 0.9
     };
     
-    saveData();
+    await saveGlobalSettings(['forumSettings', 'forumApiSettings']);
     showToast('设置已保存');
 }
 
@@ -1876,11 +1876,11 @@ function forumOpenDMSettingsModal() {
     if (modal) modal.classList.add('visible');
 }
 
-function forumCloseDMSettingsModal() {
+async function forumCloseDMSettingsModal() {
     var cb = document.getElementById('forum-dm-generate-detailed-stranger');
     if (cb && db.forumSettings) {
         db.forumSettings.generateDetailedStranger = !!cb.checked;
-        saveData();
+        await saveGlobalSetting('forumSettings');
     }
     var modal = document.getElementById('forum-dm-settings-modal');
     if (modal) modal.classList.remove('visible');
