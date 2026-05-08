@@ -31,6 +31,50 @@ function getChatDisplayName(chatType, chatId) {
     return g ? (g.name || '群聊') : '未知';
 }
 
+
+function getFavoriteAwarenessCharacter(fav) {
+    if (!fav || fav.favoriteBy !== 'character') return null;
+    const charId = fav.characterId || fav.chatId;
+    if (!charId || fav.chatType !== 'private') return null;
+    return (db.characters || []).find(c => c.id === charId) || null;
+}
+
+function getFavoriteMessagePreviewForAwareness(fav) {
+    if (!fav) return '';
+    const preview = getMessagePreview(fav.content || '');
+    return preview || (fav.content || '').slice(0, 500);
+}
+
+async function setCharacterFavoriteAwarenessPending(character, fav, eventType) {
+    if (!character || !fav) return false;
+    const replyNote = (fav.replyNote || '').trim();
+    const note = (fav.note || '').trim();
+
+    if (eventType === 'user_replied_to_character_favorite') {
+        if (!character.characterFavoriteAwareEnabled || !replyNote) return false;
+    } else if (eventType === 'user_favorited_character_message' || eventType === 'user_saved_favorite_note') {
+        if (!character.characterUserFavoriteAwareEnabled) return false;
+        if (eventType === 'user_saved_favorite_note' && !note) return false;
+    } else {
+        return false;
+    }
+
+    character.pendingFavoriteAwareness = {
+        eventType: eventType,
+        favoriteId: fav.id,
+        messageId: fav.messageId,
+        messagePreview: getFavoriteMessagePreviewForAwareness(fav),
+        note: fav.note || '',
+        replyNote: replyNote,
+        timestamp: Date.now()
+    };
+    if (typeof saveCharacterData === 'function') {
+        await saveCharacterData(character);
+    }
+    return true;
+}
+
+
 // 单条消息收藏
 function addMessageToFavorites(messageId) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
@@ -64,8 +108,12 @@ function addMessageToFavorites(messageId) {
     };
     if (!db.favorites) db.favorites = [];
     db.favorites.push(fav);
-    saveData().then(() => {
-        showToast('已收藏');
+    saveData().then(async () => {
+        let awarenessTriggered = false;
+        if (currentChatType === 'private' && message.role === 'assistant') {
+            awarenessTriggered = await setCharacterFavoriteAwarenessPending(chat, fav, 'user_favorited_character_message');
+        }
+        showToast(awarenessTriggered ? '已收藏，已让角色感知你收藏了这条消息' : '已收藏');
         if (typeof triggerHapticFeedback === 'function') triggerHapticFeedback('light');
     });
 }
@@ -273,11 +321,13 @@ function renderFavoritesList(filter) {
                     const previewShort = preview.length > 60 ? preview.slice(0, 60) + '…' : preview;
                     const timeStr = formatFavoriteTime(fav.favoriteTime);
                     const note = (fav.note || '').trim();
+                    const replyNote = (fav.replyNote || '').trim();
                     return `
                     <div class="favorite-card character-favorite" data-favorite-id="${fav.id}">
                         <div class="favorite-checkbox"></div>
                         <div class="favorite-card-content">${escapeHtml(previewShort)}</div>
                         ${note ? `<div class="favorite-card-note"><span class="character-thought-icon">💭</span>${escapeHtml(note)}</div>` : ''}
+                        ${replyNote ? `<div class="favorite-card-note"><span class="character-thought-icon">↩</span>${escapeHtml(replyNote)}</div>` : ''}
                         <div class="favorite-card-meta">
                             <span class="favorite-card-time">${timeStr}</span>
                         </div>
@@ -310,15 +360,17 @@ function renderFavoritesList(filter) {
                     const favoriteTimeStr = formatFavoriteTime(fav.favoriteTime);
                     const sendTimeStr = formatMessageSendTime(fav.timestamp);
                     const note = (fav.note || '').trim();
+                    const replyNote = (fav.replyNote || '').trim();
                     return `
                     <div class="favorite-card" data-favorite-id="${fav.id}">
                         <div class="favorite-checkbox"></div>
                         <div class="favorite-card-content">${escapeHtml(previewShort)}</div>
+                        ${note ? `<div class="favorite-card-note"><span class="character-thought-icon">💭</span>${escapeHtml(note)}</div>` : ''}
+                        ${replyNote ? `<div class="favorite-card-note"><span class="character-thought-icon">↩</span>${escapeHtml(replyNote)}</div>` : ''}
                         <div class="favorite-card-meta">
                             <span class="favorite-card-time">${sendTimeStr}</span>
                             <span class="favorite-card-time-sep">·</span>
                             <span class="favorite-card-time">${favoriteTimeStr}</span>
-                            ${note ? `<span class="favorite-card-note-tag">${escapeHtml(note)}</span>` : ''}
                         </div>
                     </div>`;
                 }).join('');
@@ -450,9 +502,11 @@ function openFavoriteDetail(favoriteId) {
     const contentEl = document.getElementById('favorite-detail-content');
     const metaEl = document.getElementById('favorite-detail-meta');
     const noteInput = document.getElementById('favorite-detail-note');
+    const replyNoteInput = document.getElementById('favorite-detail-reply-note');
     const deleteBtn = document.getElementById('favorite-detail-delete-btn');
     const saveNoteBtn = document.getElementById('favorite-detail-save-note-btn');
     const noteSection = document.querySelector('.favorite-detail-note-section');
+    const replyNoteSection = document.querySelector('.favorite-detail-reply-note-section');
     if (!contentEl || !noteInput) return;
 
     currentFavoriteDetailId = favoriteId;
@@ -473,10 +527,23 @@ function openFavoriteDetail(favoriteId) {
     noteInput.value = fav.note || '';
     noteInput.readOnly = isCharacterFavorite;
     noteInput.placeholder = isCharacterFavorite ? '角色的收藏寄语（只读）' : '写一句想记住的话…';
-    if (saveNoteBtn) saveNoteBtn.style.display = isCharacterFavorite ? 'none' : '';
+    if (saveNoteBtn) {
+        saveNoteBtn.style.display = '';
+        saveNoteBtn.textContent = isCharacterFavorite ? '保存批注' : '保存寄语';
+    }
     if (noteSection) {
         const label = noteSection.querySelector('.favorite-detail-note-label');
         if (label) label.textContent = isCharacterFavorite ? '角色收藏寄语' : '收藏寄语';
+    }
+    if (replyNoteSection) {
+        replyNoteSection.style.display = '';
+        const replyLabel = replyNoteSection.querySelector('.favorite-detail-reply-note-label');
+        if (replyLabel) replyLabel.textContent = isCharacterFavorite ? '用户的批注' : '角色的批注';
+    }
+    if (replyNoteInput) {
+        replyNoteInput.value = fav.replyNote || '';
+        replyNoteInput.readOnly = !isCharacterFavorite;
+        replyNoteInput.placeholder = isCharacterFavorite ? '写一句对他收藏寄语的回应…' : '角色给这条收藏留下的批注';
     }
     if (deleteBtn) {
         deleteBtn.onclick = () => confirmDeleteFavorite(favoriteId);
@@ -485,17 +552,42 @@ function openFavoriteDetail(favoriteId) {
 }
 
 // 保存收藏寄语
-function saveFavoriteNote() {
+async function saveFavoriteNote() {
     const id = currentFavoriteDetailId;
     const noteInput = document.getElementById('favorite-detail-note');
+    const replyNoteInput = document.getElementById('favorite-detail-reply-note');
     if (!id || !noteInput) return;
     const fav = (db.favorites || []).find(f => f.id === id);
     if (!fav) return;
-    fav.note = noteInput.value.trim();
-    saveData().then(() => {
-        showToast('寄语已保存');
+
+    const isCharacterFavorite = fav.favoriteBy === 'character';
+    if (isCharacterFavorite) {
+        fav.replyNote = replyNoteInput ? replyNoteInput.value.trim() : '';
+    } else {
+        fav.note = noteInput.value.trim();
+    }
+
+    try {
+        await saveData();
+
+        let awarenessTriggered = false;
+        if (isCharacterFavorite && fav.replyNote) {
+            const character = getFavoriteAwarenessCharacter(fav);
+            awarenessTriggered = await setCharacterFavoriteAwarenessPending(character, fav, 'user_replied_to_character_favorite');
+        } else if (!isCharacterFavorite && fav.chatType === 'private' && fav.note) {
+            const character = (db.characters || []).find(c => c.id === fav.chatId) || null;
+            awarenessTriggered = await setCharacterFavoriteAwarenessPending(character, fav, 'user_saved_favorite_note');
+        }
+
+        showToast(isCharacterFavorite
+            ? (awarenessTriggered ? '已让角色感知这条收藏批注' : '批注已保存')
+            : (awarenessTriggered ? '已让角色感知这条收藏寄语' : '寄语已保存'));
+
         renderFavoritesList(currentFavoritesFilter);
-    });
+    } catch (e) {
+        console.error('[Favorites] 保存收藏备注失败:', e);
+        showToast('保存失败，请稍后再试');
+    }
 }
 
 function confirmDeleteFavorite(favoriteId) {

@@ -73,6 +73,17 @@ const defaultWidgetSettings = {
     bottomRight: { emoji: '🥛', text: '.☘︎ ˖+×+.' }
 };
 
+
+function getDefaultCalendarData() {
+    return {
+        cycleLength: 28,
+        periodLength: 5,
+        periodRecords: [],
+        notes: {},
+        selectedDate: ''
+    };
+}
+
 const defaultIcons = {
     'chat-list-screen': {name: '404', url: 'https://i.postimg.cc/VvQB8dQT/chan-143.png'},
     'api-settings-screen': {name: 'api', url: 'https://i.postimg.cc/50FqT8GL/chan-125.png'},
@@ -85,6 +96,7 @@ const defaultIcons = {
     'night-mode-btn': {name: '夜间模式', url: 'https://i.postimg.cc/htYvkdQK/chan-146.png'},
     'forum-screen': {name: '论坛', url: 'https://i.postimg.cc/fyPVBZf1/1758451183605.png'},
     'music-screen': {name: '音乐', url: 'https://i.postimg.cc/ydd65txK/1758451018266.png'},
+    'calendar-screen': {name: '日历', url: 'https://i.postimg.cc/VNzz55Hd/chan-75.png'},
     'diary-screen': {name: '日记本', url: 'https://i.postimg.cc/bJBLzmFH/chan-70.png'},
     'piggy-bank-screen': {name: '存钱罐', url: 'https://i.postimg.cc/3RmWRRtS/chan-18.png'},
     'pomodoro-screen': {name: '番茄钟', url: 'https://i.postimg.cc/PrYGRDPF/chan-76.png'},
@@ -165,7 +177,7 @@ const globalSettingKeys = [
     'chatFolders', 'fontSizeScale', 'activePersonaId', 'moreProfileCardBg', 'statusBarPresets', 'regexFilterPresets', 'themeSettings', 'themePresets', 'savedKeyboardHeight',
     'globalSendSound', 'globalReceiveSound', 'globalMessageSentSound', 'globalIncomingCallSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets', 'iconPresets', 'homeWidgetPresets', 'widgetWallpaperPresets', 'voicePresets',
     'cotSettings', 'cotPresets', 'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint',
-    'favorites', 'piggyBank',
+    'favorites', 'calendarData', 'piggyBank',
     'theaterScenarios', 'theaterPromptPresets',
     'theaterHtmlScenarios', 'theaterHtmlPromptPresets', 'theaterMode',
     'theaterApiSettings', 'theaterFontSize', 'theaterFontPreset',
@@ -174,8 +186,126 @@ const globalSettingKeys = [
 ];
 if (typeof window !== 'undefined') window.globalSettingKeysForBackup = globalSettingKeys;
 
-const appVersion = "v52-remark-aware-2026-05-06";
+const appVersion = "WOW-v55.8-all-character-favorites-access-2026-05-08";
 const updateLog = [
+    {
+        version: "WOW v55.8",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.8：收藏常驻感知补充“允许角色查看全部角色收藏”。",
+            "开启后，角色可查看所有角色自己收藏过的用户消息，并明确标注来源角色，避免误认为是自己的收藏。",
+            "每类注入条数仍按原规则生效：0=每类全部，大于0=每类最多 N 条。",
+            "本版不改收藏数据结构，不改原有触发型收藏感知。"
+        ]
+    },
+    {
+        version: "WOW v55.7",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.7：新增收藏常驻感知，默认关闭。",
+            "角色设置新增：允许角色查看自己的收藏、允许角色查看用户收藏的他的消息、允许角色查看用户收藏的全部角色消息。",
+            "新增每类注入条数，0=每类全部，大于0=每类最多 N 条。",
+            "本版不改原有收藏/批注触发型感知，不改收藏数据结构。"
+        ]
+    },
+    {
+        version: "WOW v55.6",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.6：修复日历返回按钮，退出日历返回 Menu 页面而不是主页。",
+            "修复经期记录表单回填：重新进入日历时自动显示最近一次保存的开始日期和结束日期。",
+            "点击日历某一天时，会把该日期填入开始/结束日期，便于新增或修改记录。",
+            "本版不改经期存储结构，不改角色感知逻辑。"
+        ]
+    },
+    {
+        version: "WOW v55.5",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.5：新增角色级“允许角色感知我的经期”开关，默认关闭。",
+            "开启后，私聊 system prompt 会注入日历中的经期状态、最近记录、下次预计经期、预计排卵日与易孕期。",
+            "提示词要求角色只在气氛合适时自然提及，不要机械播报，也不强制立即回应。",
+            "本版不接情侣空间、不改日历数据结构、不碰混淆 main.js。"
+        ]
+    },
+    {
+        version: "WOW v55.4",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.4：日历改为黑白圆圈风格。",
+            "删除顶部说明卡与底部估算提示文字。",
+            "月份与星期改为英文显示，日期改为圆圈样式。",
+            "经期、预计经期、排卵日与易孕期改用黑白圆圈样式区分。"
+        ]
+    },
+    {
+        version: "WOW v55.3",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.3：日历改为纯经期日历，删除心情手帐和角色记录相关 UI。",
+            "美化日历 UI：新增经期日历说明卡、优化日期格、摘要卡和经期标记样式。",
+            "点击某天只选中日期并填入经期开始日期，不再弹出手帐卡片。",
+            "本版不接情侣空间、不接角色感知。"
+        ]
+    },
+    {
+        version: "WOW v55.2",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.2：调整日历手帐 UI，点选某一天后弹出当天手帐卡片。",
+            "删除日历右上角“今”按钮，移除页面底部独立手帐区。",
+            "当天手帐卡片新增“你的记录”和“角色记录”两组字段，并支持自定义表情/状态输入。",
+            "本版只做 UI 与本地存储结构预留，不接角色感知。"
+        ]
+    },
+    {
+        version: "WOW v55.1",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.1：日历入口改为接入 404 Menu 原有“日历”按钮。",
+            "删除主页第二页新增的日历图标，避免重复入口。",
+            "点击 Menu 日历后直接进入 v55 日历页面，不再提示开发中。",
+            "本版不碰混淆 main.js，不改日历数据结构。"
+        ]
+    },
+    {
+        version: "WOW v55",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55：新增日历一期。",
+            "启用日历入口，可记录经期开始/结束日期，设置周期和经期天数，自动预测下次经期、排卵日和易孕期。",
+            "新增每日心情/手帐短记，数据保存在本地 calendarData。",
+            "本版不做角色感知，不碰后台自动消息、不碰混淆 main.js。"
+        ]
+    },
+    {
+        version: "WOW v53.2.1",
+        date: "2026-05-08",
+        notes: [
+            "修正用户收藏列表样式：收藏寄语和角色批注改为独立块显示，和角色收藏列表保持一致。",
+            "仅调整 UI 渲染，不改收藏感知逻辑、不改保存链路。"
+        ]
+    },
+    {
+        version: "WOW v53.2",
+        date: "2026-05-08",
+        notes: [
+            "WOW v53.2：新增“角色感知我收藏他的消息”独立开关。",
+            "用户收藏角色消息时，角色下一轮可自然感知；用户保存收藏寄语时，角色可再次感知。",
+            "角色可输出 [FAVORITE_REPLY_NOTE:批注内容] 给该收藏写入“角色的批注”，指令不显示在聊天内容里。",
+            "本版基于 WOW v53 第一阶段，只新增用户收藏线，不改导入导出、不改保存主链路。"
+        ]
+    },
+    {
+        version: "WOW v53",
+        date: "2026-05-08",
+        notes: [
+            "WOW v53：新增收藏批注感知第一阶段。",
+            "角色设置新增“角色感知收藏批注”开关，默认关闭。",
+            "角色收藏详情新增“用户的批注”栏；保存批注后，下一轮角色可自然感知这条收藏和批注。",
+            "本版只做“角色收藏 → 用户批注 → 角色感知”，不做用户收藏线，不写聊天 history。"
+        ]
+    },
     {
         version: "v52",
         date: "2026-05-06",
@@ -1157,6 +1287,14 @@ const loadData = async () => {
         if (c.canBlockUser === undefined) c.canBlockUser = true;
         // 角色掌控模式：允许角色查看并操控用户手机
         if (c.characterRemarkAwareEnabled === undefined) c.characterRemarkAwareEnabled = false;
+        if (c.characterFavoriteAwareEnabled === undefined) c.characterFavoriteAwareEnabled = false;
+        if (c.characterUserFavoriteAwareEnabled === undefined) c.characterUserFavoriteAwareEnabled = false;
+        if (c.characterPeriodAwareEnabled === undefined) c.characterPeriodAwareEnabled = false;
+        if (c.favoriteMemoryOwnEnabled === undefined) c.favoriteMemoryOwnEnabled = false;
+        if (c.favoriteMemoryAllCharacterEnabled === undefined) c.favoriteMemoryAllCharacterEnabled = false;
+        if (c.favoriteMemoryUserOwnEnabled === undefined) c.favoriteMemoryUserOwnEnabled = false;
+        if (c.favoriteMemoryUserAllEnabled === undefined) c.favoriteMemoryUserAllEnabled = false;
+        if (c.favoriteMemoryLimit === undefined) c.favoriteMemoryLimit = 0;
         if (c.phoneControlEnabled === undefined) c.phoneControlEnabled = false;
         if (c.phoneControlViewLimit === undefined) c.phoneControlViewLimit = 10;
         if (!Array.isArray(c.phoneControlHistory)) c.phoneControlHistory = [];

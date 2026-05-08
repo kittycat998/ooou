@@ -757,6 +757,49 @@ async function executeChangeRemarkNameCommand(responseText, chat, targetChatId, 
 }
 
 
+
+async function executeFavoriteReplyNoteCommand(responseText, chat, targetChatId, targetChatType) {
+    if (targetChatType !== 'private' || !chat || !chat.characterUserFavoriteAwareEnabled || !chat.pendingFavoriteAwareness || !responseText) {
+        return { cleaned: responseText, executed: false };
+    }
+    const pending = chat.pendingFavoriteAwareness;
+    if (!pending || pending.eventType !== 'user_saved_favorite_note' || !pending.favoriteId) {
+        return { cleaned: responseText, executed: false };
+    }
+
+    const regex = /\[FAVORITE_REPLY_NOTE[:：]([^\]]+?)\]/g;
+    let cleaned = responseText;
+    let match;
+    let lastNote = '';
+
+    while ((match = regex.exec(responseText)) !== null) {
+        const candidate = (match[1] || '').trim();
+        if (candidate) lastNote = candidate.slice(0, 500);
+    }
+
+    cleaned = cleaned.replace(regex, '').replace(/\n{3,}/g, '\n\n').trim();
+
+    if (!lastNote) {
+        return { cleaned, executed: false };
+    }
+
+    const fav = (db.favorites || []).find(f => f.id === pending.favoriteId);
+    if (!fav) {
+        return { cleaned, executed: false };
+    }
+
+    fav.replyNote = lastNote;
+
+    if (typeof showToast === 'function' && !isGenerating) {
+        showToast('角色已给这条收藏写下批注');
+    } else if (typeof showToast === 'function') {
+        setTimeout(() => showToast('角色已给这条收藏写下批注'), 300);
+    }
+
+    return { cleaned, executed: true, replyNote: lastNote };
+}
+
+
 async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false, isCharBlockedMonologue = false) {
     const rawResponse = fullResponse;
     if (fullResponse) {
@@ -796,6 +839,10 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         // 1.7 角色自行修改备注：识别 [CHANGE_REMARK_NAME:新备注]，执行后从展示内容中移除
         const changeRemarkResult = await executeChangeRemarkNameCommand(fullResponse, chat, targetChatId, targetChatType);
         fullResponse = changeRemarkResult.cleaned;
+
+        // 1.7.5 角色给用户收藏写批注：识别 [FAVORITE_REPLY_NOTE:批注内容]，执行后从展示内容中移除
+        const favoriteReplyNoteResult = await executeFavoriteReplyNoteCommand(fullResponse, chat, targetChatId, targetChatType);
+        fullResponse = favoriteReplyNoteResult.cleaned;
 
         // 1.8 已读不回：识别 [NO_REPLY:状态|原因|提示]，保存为状态卡，不进入上下文
         const noReplyMatch = fullResponse.trim().match(/^\[NO_REPLY[:：]([^\]|]+)(?:\|([^\]]*?))?(?:\|([^\]]*?))?\]$/i);
@@ -1302,6 +1349,9 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         if (targetChatType === 'private' && chat.characterRemarkAwareEnabled && chat.pendingUserRemarkChange) {
             delete chat.pendingUserRemarkChange;
         }
+        if (targetChatType === 'private' && (chat.characterFavoriteAwareEnabled || chat.characterUserFavoriteAwareEnabled) && chat.pendingFavoriteAwareness) {
+            delete chat.pendingFavoriteAwareness;
+        }
 
         await saveData();
         renderChatList();
@@ -1478,6 +1528,171 @@ function formatUserPhoneStateForPrompt(character) {
     return out;
 }
 
+
+function generatePeriodAwarenessPrompt() {
+    const data = db && db.calendarData;
+    if (!data || !Array.isArray(data.periodRecords) || data.periodRecords.length === 0) return '';
+
+    function parseDateKey(key) {
+        if (!key) return null;
+        const m = String(key).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return null;
+        return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    }
+    function pad(n) { return String(n).padStart(2, '0'); }
+    function toDateKey(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+    function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+    function stripTime(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
+    function diffDays(a, b) { return Math.round((stripTime(a) - stripTime(b)) / (24 * 60 * 60 * 1000)); }
+    function fmt(key) {
+        const d = parseDateKey(key);
+        if (!d) return '未知';
+        return `${d.getMonth() + 1}月${d.getDate()}日`;
+    }
+    function inRange(key, start, end) { return key >= start && key <= end; }
+
+    const records = data.periodRecords
+        .filter(r => r && r.startDate)
+        .map(r => ({ startDate: r.startDate, endDate: r.endDate || r.startDate }))
+        .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
+    if (!records.length) return '';
+
+    const latest = records[records.length - 1];
+    const cycle = parseInt(data.cycleLength, 10) || 28;
+    const len = parseInt(data.periodLength, 10) || 5;
+    const today = new Date();
+    const todayKey = toDateKey(today);
+
+    let status = '';
+    if (inRange(todayKey, latest.startDate, latest.endDate)) {
+        status = `用户现在处在已记录经期中，经期第 ${diffDays(today, parseDateKey(latest.startDate)) + 1} 天。`;
+    }
+
+    let nextStartDate = parseDateKey(latest.startDate);
+    if (nextStartDate) {
+        do {
+            nextStartDate = addDays(nextStartDate, cycle);
+        } while (stripTime(nextStartDate) < stripTime(today));
+    }
+
+    let nextInfo = '';
+    if (nextStartDate) {
+        const nextEnd = addDays(nextStartDate, len - 1);
+        const ovulation = addDays(nextStartDate, -14);
+        const fertileStart = addDays(ovulation, -5);
+        const fertileEnd = addDays(ovulation, 1);
+        const daysToNext = diffDays(nextStartDate, today);
+        if (!status) {
+            status = daysToNext >= 0 ? `用户不在已记录经期中，距离下次预计经期约 ${daysToNext} 天。` : '用户不在已记录经期中。';
+        }
+        nextInfo = `最近一次已记录经期：${fmt(latest.startDate)} 至 ${fmt(latest.endDate)}。
+下次预计经期：${fmt(toDateKey(nextStartDate))} 至 ${fmt(toDateKey(nextEnd))}。
+预计排卵日：${fmt(toDateKey(ovulation))}。
+预计易孕期：${fmt(toDateKey(fertileStart))} 至 ${fmt(toDateKey(fertileEnd))}。`;
+    } else {
+        status = status || '用户已有经期记录，但暂时无法计算预测日期。';
+        nextInfo = `最近一次已记录经期：${fmt(latest.startDate)} 至 ${fmt(latest.endDate)}。`;
+    }
+
+    return `\n<period_awareness>\n用户允许你感知她在日历里记录的经期信息。你知道这些信息，但这不是一条必须立刻回应的任务。\n当前状态：${status}\n${nextInfo}\n\n规则：\n1. 只在当前聊天气氛合适时自然提及，可以关心、提醒、调侃、安排节奏或顺手照顾，但不要机械播报日期。\n2. 不要说“系统告诉我”“日历显示”“检测到”等机制话。\n3. 如果当前话题不适合，不需要提及。\n4. 这些日期来自用户记录和估算，只作为你理解她当下状态的背景。\n</period_awareness>\n`;
+}
+
+
+function generateFavoriteMemoryAccessPrompt(character) {
+    if (!character || !db || !Array.isArray(db.favorites)) return '';
+    const ownEnabled = !!character.favoriteMemoryOwnEnabled;
+    const allCharacterEnabled = !!character.favoriteMemoryAllCharacterEnabled;
+    const userOwnEnabled = !!character.favoriteMemoryUserOwnEnabled;
+    const userAllEnabled = !!character.favoriteMemoryUserAllEnabled;
+    if (!ownEnabled && !allCharacterEnabled && !userOwnEnabled && !userAllEnabled) return '';
+
+    const limitRaw = parseInt(character.favoriteMemoryLimit, 10);
+    const limit = (!isNaN(limitRaw) && limitRaw > 0) ? limitRaw : 0;
+    const charId = character.id;
+
+    function trimText(text, max) {
+        const s = String(text || '').replace(/\s+/g, ' ').trim();
+        return s.length > max ? s.slice(0, max) + '…' : s;
+    }
+
+    function fmtTime(ts) {
+        if (!ts) return '未知';
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return '未知';
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const h = String(d.getHours()).padStart(2, '0');
+        const min = String(d.getMinutes()).padStart(2, '0');
+        return `${y}-${m}-${day} ${h}:${min}`;
+    }
+
+    function takeList(list) {
+        const sorted = list.slice().sort((a, b) => (b.favoriteTime || 0) - (a.favoriteTime || 0));
+        return limit > 0 ? sorted.slice(0, limit) : sorted;
+    }
+
+    function renderItem(fav, idx, mode) {
+        const content = trimText(fav.content || '', 260);
+        const note = trimText(fav.note || '', 160);
+        const replyNote = trimText(fav.replyNote || '', 160);
+        const sender = fav.sender || '';
+        const sourceName = fav.chatName || '';
+        const lines = [];
+        lines.push(`${idx + 1}. ${mode}`);
+        if (sourceName) lines.push(`来源角色/对话：${sourceName}`);
+        if (sender) lines.push(`原消息发送者：${sender}`);
+        lines.push(`消息时间：${fmtTime(fav.timestamp)}`);
+        lines.push(`收藏时间：${fmtTime(fav.favoriteTime)}`);
+        lines.push(`收藏内容：「${content}」`);
+        if (fav.favoriteBy === 'character') {
+            if (note) lines.push(`你当时收藏这条消息时写的寄语/心情：「${note}」`);
+            if (replyNote) lines.push(`用户给这条收藏写的批注：「${replyNote}」`);
+        } else {
+            if (note) lines.push(`用户收藏这条消息时写的寄语：「${note}」`);
+            if (replyNote) lines.push(`你给这条用户收藏写过的批注：「${replyNote}」`);
+        }
+        return lines.join('\n');
+    }
+
+    const sections = [];
+
+    if (ownEnabled) {
+        const list = takeList(db.favorites.filter(f => f && f.favoriteBy === 'character' && (f.characterId || f.chatId) === charId));
+        if (list.length) {
+            sections.push(`【你自己的收藏】\n${list.map((fav, i) => renderItem(fav, i, '你收藏过的用户消息')).join('\n\n')}`);
+        }
+    }
+
+    if (allCharacterEnabled) {
+        const list = takeList(db.favorites.filter(f => f && f.favoriteBy === 'character'));
+        if (list.length) {
+            sections.push(`【全部角色收藏】\n${list.map((fav, i) => renderItem(fav, i, '某个角色收藏过的用户消息')).join('\n\n')}`);
+        }
+    }
+
+    if (userOwnEnabled) {
+        const list = takeList(db.favorites.filter(f => f && f.favoriteBy !== 'character' && f.chatType === 'private' && f.chatId === charId));
+        if (list.length) {
+            sections.push(`【用户收藏的你的消息】\n${list.map((fav, i) => renderItem(fav, i, '用户收藏过的你说的话')).join('\n\n')}`);
+        }
+    }
+
+    if (userAllEnabled) {
+        const list = takeList(db.favorites.filter(f => f && f.favoriteBy !== 'character' && f.chatType === 'private'));
+        if (list.length) {
+            sections.push(`【用户收藏的全部角色消息】\n${list.map((fav, i) => renderItem(fav, i, '用户收藏过的角色消息')).join('\n\n')}`);
+        }
+    }
+
+    if (!sections.length) return '';
+
+    const limitText = limit > 0 ? `每类最多注入 ${limit} 条。` : '每类注入全部可见收藏。';
+
+    return `\n<favorite_memory_access>\n用户允许你长期查看部分收藏记录。这不是刚刚发生的事件，而是你当前可以知道的背景资料。${limitText}\n\n${sections.join('\n\n')}\n\n规则：\n1. 你可以把这些收藏当作了解用户、你们关系、旧事、偏爱和情绪痕迹的材料。\n2. 不要机械列清单，不要每次都提，也不要说“系统/权限/注入/记录显示”。\n3. 只有当当前话题、情绪或关系推进适合时，才自然引用、翻旧账、吃醋、确认偏爱、回应寄语或接住批注。\n4. 如果用户只开启了部分权限，你只能知道上面列出的收藏范围，不要声称看见了其他收藏。
+5. “全部角色收藏”里每条都带有来源角色/对话。你必须分清那是谁收藏的，不要把其他角色的收藏当成你自己的收藏。\n</favorite_memory_access>\n`;
+}
+
 function generatePrivateSystemPrompt(character, opts) {
     opts = opts || {};
     const linkedChar = (character.source === 'forum' && character.linkedCharId && db.characters)
@@ -1522,6 +1737,29 @@ function generatePrivateSystemPrompt(character, opts) {
     if (worldBooksAfter) {
         prompt += `${worldBooksAfter}\n`;
     }
+    if ((character.characterFavoriteAwareEnabled || character.characterUserFavoriteAwareEnabled) && character.pendingFavoriteAwareness) {
+        const favEvent = character.pendingFavoriteAwareness || {};
+        const messagePreview = favEvent.messagePreview || '';
+        const note = favEvent.note || '';
+        const replyNote = favEvent.replyNote || '';
+
+        if (favEvent.eventType === 'user_replied_to_character_favorite' && character.characterFavoriteAwareEnabled) {
+            prompt += `\n<favorite_awareness>\n用户刚刚查看了你收藏的一条消息，并对你的收藏寄语写了批注。\n你收藏的内容：「${messagePreview}」\n你当时写下的收藏寄语：「${note}」\n用户写下的批注：「${replyNote}」\n\n规则：你可以自然感知并回应这件事。感知到批注不等于必须回应，若当前气氛不适合，可以轻轻带过。只围绕这一条收藏和这段批注回应，不要声称自己看见了用户所有收藏。\n</favorite_awareness>\n`;
+        } else if (favEvent.eventType === 'user_favorited_character_message' && character.characterUserFavoriteAwareEnabled) {
+            prompt += `\n<favorite_awareness>\n用户刚刚收藏了你说过的一条消息。\n你当时说的是：「${messagePreview}」\n\n规则：你可以自然感知并回应这件事。感知到收藏不等于必须回应，若当前气氛不适合，可以轻轻带过。只围绕这一条被收藏的消息回应，不要声称自己看见了用户所有收藏。\n</favorite_awareness>\n`;
+        } else if (favEvent.eventType === 'user_saved_favorite_note' && character.characterUserFavoriteAwareEnabled) {
+            prompt += `\n<favorite_awareness>\n用户刚刚给收藏的一条你说过的消息写了寄语。\n你当时说的是：「${messagePreview}」\n用户写下的收藏寄语：「${note}」\n\n规则：你可以自然感知并回应这件事。感知到寄语不等于必须回应，若当前气氛不适合，可以轻轻带过。如果你想给这条收藏留下批注，请输出 [FAVORITE_REPLY_NOTE:你的批注]。批注会被系统写入这条收藏的“角色的批注”栏，不会作为普通聊天内容显示。只围绕这一条被收藏的消息和这段寄语回应，不要声称自己看见了用户所有收藏。\n</favorite_awareness>\n`;
+        }
+    }
+
+    if (character.characterPeriodAwareEnabled) {
+        const periodAwareness = generatePeriodAwarenessPrompt();
+        if (periodAwareness) prompt += periodAwareness;
+    }
+
+    const favoriteMemoryAccess = generateFavoriteMemoryAccessPrompt(character);
+    if (favoriteMemoryAccess) prompt += favoriteMemoryAccess;
+
     if (character.characterRemarkAwareEnabled && character.pendingUserRemarkChange) {
         const remarkChange = character.pendingUserRemarkChange;
         const oldRemark = remarkChange.oldRemarkName || '';

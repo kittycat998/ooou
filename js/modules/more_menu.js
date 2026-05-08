@@ -27,7 +27,8 @@ function initMoreMenu() {
         if (action === 'status-bar') {
             openStatusBarManager();
         } else if (action === 'calendar') {
-            showToast('日历功能开发中...');
+            switchScreen('calendar-screen');
+            if (typeof renderCalendarScreen === 'function') renderCalendarScreen();
         } else if (action === 'star') {
             if (typeof openFavoritesScreen === 'function') openFavoritesScreen();
             else showToast('收藏功能加载中…');

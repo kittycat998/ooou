@@ -927,6 +927,22 @@ function loadSettingsToSidebar() {
         }
         const remarkAwareEl = document.getElementById('setting-character-remark-aware-enabled');
         if (remarkAwareEl) remarkAwareEl.checked = !!e.characterRemarkAwareEnabled;
+        const favoriteAwareEl = document.getElementById('setting-character-favorite-aware-enabled');
+        if (favoriteAwareEl) favoriteAwareEl.checked = !!e.characterFavoriteAwareEnabled;
+        const userFavoriteAwareEl = document.getElementById('setting-character-user-favorite-aware-enabled');
+        if (userFavoriteAwareEl) userFavoriteAwareEl.checked = !!e.characterUserFavoriteAwareEnabled;
+        const periodAwareEl = document.getElementById('setting-character-period-aware-enabled');
+        if (periodAwareEl) periodAwareEl.checked = !!e.characterPeriodAwareEnabled;
+        const favoriteMemoryOwnEl = document.getElementById('setting-favorite-memory-own-enabled');
+        if (favoriteMemoryOwnEl) favoriteMemoryOwnEl.checked = !!e.favoriteMemoryOwnEnabled;
+        const favoriteMemoryAllCharacterEl = document.getElementById('setting-favorite-memory-all-character-enabled');
+        if (favoriteMemoryAllCharacterEl) favoriteMemoryAllCharacterEl.checked = !!e.favoriteMemoryAllCharacterEnabled;
+        const favoriteMemoryUserOwnEl = document.getElementById('setting-favorite-memory-user-own-enabled');
+        if (favoriteMemoryUserOwnEl) favoriteMemoryUserOwnEl.checked = !!e.favoriteMemoryUserOwnEnabled;
+        const favoriteMemoryUserAllEl = document.getElementById('setting-favorite-memory-user-all-enabled');
+        if (favoriteMemoryUserAllEl) favoriteMemoryUserAllEl.checked = !!e.favoriteMemoryUserAllEnabled;
+        const favoriteMemoryLimitEl = document.getElementById('setting-favorite-memory-limit');
+        if (favoriteMemoryLimitEl) favoriteMemoryLimitEl.value = (e.favoriteMemoryLimit === undefined || e.favoriteMemoryLimit === null) ? 0 : e.favoriteMemoryLimit;
         document.getElementById('setting-char-persona').value = e.persona;
         
         if (e.source === 'forum' && db.forumUserProfile) {
@@ -1459,6 +1475,23 @@ async function saveSettingsFromSidebar() {
         const newRemarkNameForAware = remarkInputForAware ? (remarkInputForAware.value || '').trim() : (e.remarkName || '');
         const remarkAwareEl = document.getElementById('setting-character-remark-aware-enabled');
         e.characterRemarkAwareEnabled = !!(remarkAwareEl && remarkAwareEl.checked);
+        const favoriteAwareEl = document.getElementById('setting-character-favorite-aware-enabled');
+        e.characterFavoriteAwareEnabled = !!(favoriteAwareEl && favoriteAwareEl.checked);
+        const userFavoriteAwareEl = document.getElementById('setting-character-user-favorite-aware-enabled');
+        e.characterUserFavoriteAwareEnabled = !!(userFavoriteAwareEl && userFavoriteAwareEl.checked);
+        const periodAwareEl = document.getElementById('setting-character-period-aware-enabled');
+        e.characterPeriodAwareEnabled = !!(periodAwareEl && periodAwareEl.checked);
+        const favoriteMemoryOwnEl = document.getElementById('setting-favorite-memory-own-enabled');
+        e.favoriteMemoryOwnEnabled = !!(favoriteMemoryOwnEl && favoriteMemoryOwnEl.checked);
+        const favoriteMemoryAllCharacterEl = document.getElementById('setting-favorite-memory-all-character-enabled');
+        e.favoriteMemoryAllCharacterEnabled = !!(favoriteMemoryAllCharacterEl && favoriteMemoryAllCharacterEl.checked);
+        const favoriteMemoryUserOwnEl = document.getElementById('setting-favorite-memory-user-own-enabled');
+        e.favoriteMemoryUserOwnEnabled = !!(favoriteMemoryUserOwnEl && favoriteMemoryUserOwnEl.checked);
+        const favoriteMemoryUserAllEl = document.getElementById('setting-favorite-memory-user-all-enabled');
+        e.favoriteMemoryUserAllEnabled = !!(favoriteMemoryUserAllEl && favoriteMemoryUserAllEl.checked);
+        const favoriteMemoryLimitEl = document.getElementById('setting-favorite-memory-limit');
+        const favoriteMemoryLimitInput = parseInt(favoriteMemoryLimitEl ? favoriteMemoryLimitEl.value : '0', 10);
+        e.favoriteMemoryLimit = (!isNaN(favoriteMemoryLimitInput) && favoriteMemoryLimitInput > 0) ? favoriteMemoryLimitInput : 0;
         e.remarkName = newRemarkNameForAware;
         if (e.characterRemarkAwareEnabled && oldRemarkNameForAware && newRemarkNameForAware && oldRemarkNameForAware !== newRemarkNameForAware) {
             e.pendingUserRemarkChange = {
