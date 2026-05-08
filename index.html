@@ -195,7 +195,43 @@
             margin: 10px 0 0 28px;
             line-height: 1.45;
         }
-    </style>
+
+        /* === WOW Calendar 日历一期 === */
+        .calendar-content { padding: 12px; overflow-y: auto; }
+        .calendar-card { background: rgba(255,255,255,0.92); border-radius: 16px; padding: 12px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.04); }
+        .calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+        .calendar-month-title { font-size: 17px; font-weight: 700; color: #5d5360; }
+        .calendar-nav-btn { border: none; background: #f6edf2; color: #8b6d7a; border-radius: 10px; padding: 7px 10px; font-weight: 700; }
+        .calendar-weekdays, .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+        .calendar-weekday { text-align: center; font-size: 12px; color: #a28f98; padding: 4px 0; }
+        .calendar-day { min-height: 42px; border: none; border-radius: 12px; background: #faf7f9; color: #5f555a; font-size: 13px; position: relative; padding: 6px 4px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
+        .calendar-day.other-month { opacity: .35; }
+        .calendar-day.today { outline: 2px solid rgba(174, 132, 152, .35); }
+        .calendar-day.selected { background: #f3dce8; color: #694659; font-weight: 700; }
+        .calendar-day.period { background: #ffd9e8; color: #8a3d5a; }
+        .calendar-day.predicted-period { background: #ffeaf2; color: #9b6178; border: 1px dashed #e8a9bf; }
+        .calendar-day.ovulation { background: #e7f1ff; color: #4f6f96; }
+        .calendar-day.fertile { background: #eef6ff; color: #6685a5; }
+        .calendar-day.has-note::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #a97891; position: absolute; bottom: 5px; }
+        .calendar-legend { display:flex; flex-wrap:wrap; gap:8px; font-size:12px; color:#8b7a83; margin-top:10px; }
+        .calendar-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:-1px; }
+        .calendar-dot.period { background:#ffd9e8; }
+        .calendar-dot.predicted { background:#ffeaf2; border:1px dashed #e8a9bf; box-sizing:border-box; }
+        .calendar-dot.ovulation { background:#e7f1ff; }
+        .calendar-dot.note { background:#a97891; }
+        .calendar-form-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+        .calendar-field { display:flex; flex-direction:column; gap:5px; font-size:12px; color:#84737c; }
+        .calendar-field input, .calendar-field select, .calendar-field textarea { border:1px solid #eadde4; background:#fff; border-radius:10px; padding:8px; font-size:14px; color:#5d5360; box-sizing:border-box; }
+        .calendar-field textarea { min-height: 76px; resize: vertical; }
+        .calendar-actions { display:flex; gap:8px; margin-top:10px; }
+        .calendar-actions .btn { flex:1; }
+        .calendar-summary { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+        .calendar-summary-item { background:#faf3f7; border-radius:12px; padding:10px; color:#66545d; }
+        .calendar-summary-label { font-size:12px; color:#9a8790; margin-bottom:4px; }
+        .calendar-summary-value { font-size:14px; font-weight:700; line-height:1.35; }
+        .calendar-note-date { font-size:14px; font-weight:700; color:#6b5962; margin-bottom:8px; }
+        .calendar-hint { color:#9a8790; font-size:12px; line-height:1.5; margin-top:8px; }
+</style>
     <link rel="icon" href="https://i.postimg.cc/7hZN7PFZ/IMG-9961.jpg" type="image/jpeg">
 </head>
 
@@ -3738,6 +3774,71 @@
                                         </label>
                                     </div>
                                 </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">角色感知收藏批注</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-character-favorite-aware-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">角色感知我收藏他的消息</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-character-user-favorite-aware-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="kkt-item" style="margin-top: 8px;">
+                                    <div class="kkt-item-label">允许角色查看自己的收藏</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-favorite-memory-own-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">允许角色查看全部角色收藏</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-favorite-memory-all-character-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">允许角色查看我收藏的他的消息</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-favorite-memory-user-own-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">允许角色查看我收藏的全部角色消息</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-favorite-memory-user-all-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">每类注入条数（0=全部）</div>
+                                    <div class="kkt-item-control">
+                                        <input type="number" id="setting-favorite-memory-limit" min="0" value="0"
+                                            style="width:70px; text-align:right; border:none; background:transparent;">
+                                    </div>
+                                </div>
+                                <div class="kkt-item" style="padding-top: 0;">
+                                    <p class="kkt-item-hint" style="font-size: 12px; color: #999; margin: 0;">
+                                        这是收藏常驻感知。开启后，角色会长期知道你允许他查看的收藏记录；不影响原本“收藏/批注后下一轮感知”的触发功能。</p>
+                                </div>
                                 <div class="kkt-item" style="flex-direction:column; align-items:flex-start;">
                                     <div class="kkt-item-label" style="margin-bottom:8px;">角色人设</div>
                                     <textarea id="setting-char-persona"
@@ -3999,6 +4100,19 @@
                                 <div class="kkt-item" style="padding-top: 0;">
                                     <p class="kkt-item-hint" style="font-size: 12px; color: #999; margin: 0;">
                                         开启后，角色可在聊天中偷偷修改自己在你这里显示的备注名。</p>
+                                </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">允许角色感知我的经期</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-character-period-aware-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="kkt-item" style="padding-top: 0;">
+                                    <p class="kkt-item-hint" style="font-size: 12px; color: #999; margin: 0;">
+                                        开启后，角色会长期知道你在日历里记录的经期状态，可按当前气氛自然提及，不会立刻强制回应。</p>
                                 </div>
                             </div>
 
@@ -5878,6 +5992,10 @@
                     <label class="favorite-detail-note-label">收藏寄语</label>
                     <textarea id="favorite-detail-note" class="favorite-detail-note-input" placeholder="写一句想记住的话…" rows="3"></textarea>
                 </div>
+                <div class="favorite-detail-reply-note-section" style="display:none;">
+                    <label class="favorite-detail-reply-note-label">用户的批注</label>
+                    <textarea id="favorite-detail-reply-note" class="favorite-detail-note-input" placeholder="写一句给他的回应…" rows="3"></textarea>
+                </div>
             </main>
         </div>
 
@@ -7059,7 +7177,54 @@
                 <button id="close-peek-data-management-btn" class="btn btn-neutral" style="width: 100%; margin-top: 10px;">取消</button>
             </div>
         </div>
-        <div id="piggy-bank-screen" class="screen">
+        
+        <div id="calendar-screen" class="screen">
+            <header class="app-header">
+                <button class="back-btn" data-target="more-screen">‹</button>
+                <div class="title-container">
+                    <h1 class="title">日历</h1>
+                </div>
+                <div class="action-btn-group"></div>
+            </header>
+            <main class="content calendar-content">
+                <section class="calendar-card">
+                    <div class="calendar-toolbar">
+                        <button type="button" class="calendar-nav-btn" id="calendar-prev-month">‹</button>
+                        <div class="calendar-month-title" id="calendar-month-title">----</div>
+                        <button type="button" class="calendar-nav-btn" id="calendar-next-month">›</button>
+                    </div>
+                    <div class="calendar-weekdays">
+                        <div class="calendar-weekday">Mon</div><div class="calendar-weekday">Tue</div><div class="calendar-weekday">Wed</div><div class="calendar-weekday">Thu</div><div class="calendar-weekday">Fri</div><div class="calendar-weekday">Sat</div><div class="calendar-weekday">Sun</div>
+                    </div>
+                    <div class="calendar-grid" id="calendar-grid"></div>
+                    <div class="calendar-legend">
+                        <span><i class="calendar-dot period"></i>Period</span>
+                        <span><i class="calendar-dot predicted"></i>Next</span>
+                        <span><i class="calendar-dot ovulation"></i>Ovulation</span>
+                    </div>
+                </section>
+
+                <section class="calendar-card">
+                    <div class="calendar-summary" id="calendar-summary"></div>
+                </section>
+
+                <section class="calendar-card">
+                    <h3 style="margin:0 0 10px;color:#66545d;font-size:16px;">经期记录</h3>
+                    <div class="calendar-form-grid">
+                        <label class="calendar-field">开始日期<input type="date" id="calendar-period-start"></label>
+                        <label class="calendar-field">结束日期<input type="date" id="calendar-period-end"></label>
+                        <label class="calendar-field">平均周期<input type="number" id="calendar-cycle-length" min="15" max="60" value="28"></label>
+                        <label class="calendar-field">平均经期天数<input type="number" id="calendar-period-length" min="1" max="15" value="5"></label>
+                    </div>
+                    <div class="calendar-actions">
+                        <button type="button" class="btn btn-primary btn-small" id="calendar-save-period-btn">保存经期</button>
+                        <button type="button" class="btn btn-neutral btn-small" id="calendar-delete-last-period-btn">删除最近一次</button>
+                    </div>
+                </section>
+
+            </main>
+        </div>
+<div id="piggy-bank-screen" class="screen">
             <header class="app-header">
                 <button class="back-btn" data-target="home-screen">‹</button>
                 <div class="title-container">
@@ -8253,6 +8418,8 @@
     <script src="js/modules/piggy_bank.js"></script> <!-- 存钱罐（钱包）模块 -->
     <script src="js/modules/music_player.js"></script> <!-- 音乐播放器（后台保活） -->
     <script src="js/modules/appearance_settings.js"></script> <!-- 外观设置：整体 UI 切换 -->
+    <script src="js/modules/calendar_app.js"></script> <!-- WOW 日历一期 -->
+
 
     <script src="js/modules/keep_alive.js"></script> <!-- 后台保活实验模块 -->
 
