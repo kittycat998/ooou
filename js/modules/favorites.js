@@ -212,16 +212,16 @@ function addFavoritesFromSelectionMerged() {
 }
 
 // 角色静默收藏（仅收藏用户消息，不提示）
-function addCharacterFavorite(messageId, characterId, note) {
+function addCharacterFavorite(messageId, characterId, note, options = {}) {
     const chat = db.characters.find(c => c.id === characterId);
-    if (!chat || !chat.history) return;
+    if (!chat || !chat.history) return false;
     const message = chat.history.find(m => m.id === messageId);
-    if (!message) return;
-    if (message.role !== 'user') return;
+    if (!message) return false;
+    if (message.role !== 'user') return false;
     const existing = (db.favorites || []).find(
         f => f.messageId === messageId && f.characterId === characterId && f.favoriteBy === 'character'
     );
-    if (existing) return;
+    if (existing) return false;
     const content = typeof message.content === 'string' ? message.content : (message.parts && message.parts[0] ? message.parts[0].text : '');
     const chatName = chat.remarkName || chat.name || '角色';
     const sender = chat.myName || '我';
@@ -241,7 +241,8 @@ function addCharacterFavorite(messageId, characterId, note) {
     };
     if (!db.favorites) db.favorites = [];
     db.favorites.push(fav);
-    saveData();
+    if (!options.deferSave && !options.noSave) saveData();
+    return true;
 }
 
 // 打开收藏界面（从更多页进入）

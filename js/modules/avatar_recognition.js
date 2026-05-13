@@ -685,7 +685,9 @@
         return allImgParts;
     }
 
-    function executeAvatarActions(actions, charId) {
+    function executeAvatarActions(actions, charId, options) {
+        options = options || {};
+        var deferSave = !!options.deferSave;
         var char = getChar(charId);
         if (!char || !actions.length) return;
         for (var i = 0; i < actions.length; i++) {
@@ -698,7 +700,7 @@
                     char.activeCoupleAvatarId = null;
                     item.usedCount = (item.usedCount || 0) + 1;
                     item.lastUsedAt = Date.now();
-                    if (typeof saveData === 'function') saveData();
+                    if (!deferSave && typeof saveData === 'function') saveData();
                     if (typeof showToast === 'function') showToast('已切换角色头像：' + (item.name || ''));
                 }
             } else if (a.type === 'switch-user') {
@@ -709,7 +711,7 @@
                     char.activeCoupleAvatarId = null;
                     userItem.usedCount = (userItem.usedCount || 0) + 1;
                     userItem.lastUsedAt = Date.now();
-                    if (typeof saveData === 'function') saveData();
+                    if (!deferSave && typeof saveData === 'function') saveData();
                     var preview = document.getElementById('setting-my-avatar-preview');
                     if (preview) preview.src = userItem.url;
                     if (typeof renderMessages === 'function') renderMessages(false, true);
@@ -740,7 +742,7 @@
                                 lastUsedAt: 0,
                                 addedByChar: true
                             });
-                            if (typeof saveData === 'function') saveData();
+                            if (!deferSave && typeof saveData === 'function') saveData();
                             if (typeof showToast === 'function') showToast('角色收藏了一张图片作为头像：' + (a.name || ''));
                         }
                     }
@@ -763,7 +765,7 @@
                         addedBy: 'character',
                         usedCount: 0
                     });
-                    if (typeof saveData === 'function') saveData();
+                    if (!deferSave && typeof saveData === 'function') saveData();
                     if (typeof showToast === 'function') showToast('已收藏为情头：' + (a.name || ''));
                 } else if (typeof showToast === 'function') showToast('需要用户最近发送至少两张图片才能配对情头');
             } else if (a.type === 'couple-crop') {
@@ -794,7 +796,7 @@
                         char.myAvatar = userUrl;
                         char.avatar = charUrl;
                         char.activeCoupleAvatarId = entry.id;
-                        if (typeof saveData === 'function') saveData();
+                        if (!deferSave && typeof saveData === 'function') saveData();
                         var previewUser = document.getElementById('setting-my-avatar-preview');
                         if (previewUser) previewUser.src = userUrl;
                         var previewChar = document.getElementById('setting-char-avatar-preview');
@@ -814,7 +816,7 @@
                     char.avatar = coupleItem.charAvatar.url;
                     char.activeCoupleAvatarId = coupleItem.id;
                     coupleItem.usedCount = (coupleItem.usedCount || 0) + 1;
-                    if (typeof saveData === 'function') saveData();
+                    if (!deferSave && typeof saveData === 'function') saveData();
                     var previewUser = document.getElementById('setting-my-avatar-preview');
                     if (previewUser) previewUser.src = coupleItem.userAvatar.url;
                     var previewChar = document.getElementById('setting-char-avatar-preview');
@@ -839,7 +841,7 @@
                         };
                         char.history.push(removeMsg);
                     }
-                    if (typeof saveData === 'function') saveData();
+                    if (!deferSave && typeof saveData === 'function') saveData();
                     if (typeof showToast === 'function') showToast('已取消情头状态：' + coupleName);
                 }
             }

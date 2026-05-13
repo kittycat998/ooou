@@ -487,11 +487,14 @@ function setupChatSettings() {
                     showPhoneControlOptions();
                 }
             } else {
-                this.checked = true;
-                if (typeof getAiReply === 'function' && currentChatType === 'private' && currentChatId) {
-                    getAiReply(currentChatId, 'private', true, false, false, true);
-                    if (typeof showToast === 'function') showToast('TA 可能不会轻易同意…');
+                // WOW v55.9.2：普通关闭直接关闭，不再触发“角色可能不同意”的撤销阻拦流程。
+                const character = db.characters.find(c => c.id === currentChatId);
+                if (character) {
+                    character.phoneControlEnabled = false;
+                    saveData();
                 }
+                hidePhoneControlOptions();
+                if (typeof showToast === 'function') showToast('已关闭手机查看与操控权限');
             }
         });
         if (phoneControlViewLimitEl && phoneControlViewLimitValueEl) {
@@ -912,6 +915,48 @@ function _updateCharTheaterWbDisplay(displayEl, optionsEl) {
     }
 }
 
+
+function getSelfToggleSettingLabel(key) {
+    const map = {
+        favoriteMemoryAllCharacterEnabled: '查看全部角色收藏',
+        favoriteMemoryUserAllEnabled: '查看我收藏的全部角色消息',
+        characterNoReplyEnabled: '允许角色不回消息',
+        characterCanChangeUserNickname: '允许修改我的昵称',
+        musicControlEnabled: '允许一起听歌/控制音乐',
+        characterPeriodAwareEnabled: '感知我的经期',
+        charReminderEnabled: '管理提醒事项',
+        canBlockUser: '可以拉黑用户',
+        phoneControlEnabled: '查看并操控你的手机',
+        selfToggleSettingsEnabled: '自行操作功能开关'
+    };
+    return map[key] || key;
+}
+
+function pushSettingControlPendingEvent(character, event) {
+    if (!character || !event) return;
+    if (!Array.isArray(character.pendingSettingControlEvents)) character.pendingSettingControlEvents = [];
+    character.pendingSettingControlEvents.push({
+        id: 'setting_event_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+        timestamp: Date.now(),
+        ...event
+    });
+    if (character.pendingSettingControlEvents.length > 10) {
+        character.pendingSettingControlEvents = character.pendingSettingControlEvents.slice(-10);
+    }
+}
+
+function trackManualSelfToggleSettingChange(character, key, oldValue, newValue) {
+    if (!character || oldValue === newValue) return;
+    pushSettingControlPendingEvent(character, {
+        type: key === 'selfToggleSettingsEnabled' ? (newValue ? 'self_control_enabled' : 'self_control_disabled') : 'user_changed_setting',
+        key: key,
+        label: getSelfToggleSettingLabel(key),
+        oldValue: !!oldValue,
+        newValue: !!newValue,
+        actor: 'user'
+    });
+}
+
 function loadSettingsToSidebar() {
     const e = db.characters.find(e => e.id === currentChatId);
     if (e) {
@@ -933,6 +978,8 @@ function loadSettingsToSidebar() {
         if (userFavoriteAwareEl) userFavoriteAwareEl.checked = !!e.characterUserFavoriteAwareEnabled;
         const periodAwareEl = document.getElementById('setting-character-period-aware-enabled');
         if (periodAwareEl) periodAwareEl.checked = !!e.characterPeriodAwareEnabled;
+        const selfToggleSettingsEl = document.getElementById('setting-self-toggle-settings-enabled');
+        if (selfToggleSettingsEl) selfToggleSettingsEl.checked = !!e.selfToggleSettingsEnabled;
         const favoriteMemoryOwnEl = document.getElementById('setting-favorite-memory-own-enabled');
         if (favoriteMemoryOwnEl) favoriteMemoryOwnEl.checked = !!e.favoriteMemoryOwnEnabled;
         const favoriteMemoryAllCharacterEl = document.getElementById('setting-favorite-memory-all-character-enabled');
@@ -950,6 +997,8 @@ function loadSettingsToSidebar() {
             const defaultAvatar = (fp.avatar && fp.avatar.trim()) ? fp.avatar : 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg';
             document.getElementById('setting-my-avatar-preview').src = (e.myAvatar && e.myAvatar.trim()) ? e.myAvatar : defaultAvatar;
             document.getElementById('setting-my-name').value = (e.myName && String(e.myName).trim()) ? e.myName : (fp.username || '用户');
+            const myNicknameEl = document.getElementById('setting-my-nickname');
+            if (myNicknameEl) myNicknameEl.value = e.myNickname || '';
             document.getElementById('setting-my-persona').value = (e.myPersona && String(e.myPersona).trim()) ? e.myPersona : (fp.bio || '');
         }
         
@@ -1017,6 +1066,8 @@ function loadSettingsToSidebar() {
         if (e.source !== 'forum') {
             document.getElementById('setting-my-avatar-preview').src = e.myAvatar || 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg';
             document.getElementById('setting-my-name').value = e.myName || '';
+            const myNicknameEl = document.getElementById('setting-my-nickname');
+            if (myNicknameEl) myNicknameEl.value = e.myNickname || '';
             document.getElementById('setting-my-persona').value = e.myPersona || '';
         }
         document.getElementById('setting-theme-color').value = e.theme || 'white_pink';
@@ -1073,6 +1124,10 @@ function loadSettingsToSidebar() {
         if (charNoReplyEl) charNoReplyEl.checked = e.characterNoReplyEnabled || false;
         const charChangeRemarkEl = document.getElementById('setting-char-change-remark-enabled');
         if (charChangeRemarkEl) charChangeRemarkEl.checked = e.characterChangeRemarkEnabled || false;
+        const charChangeUserNicknameEl = document.getElementById('setting-char-change-user-nickname-enabled');
+        if (charChangeUserNicknameEl) charChangeUserNicknameEl.checked = e.characterCanChangeUserNickname || false;
+        const charMusicControlEl = document.getElementById('setting-char-music-control-enabled');
+        if (charMusicControlEl) charMusicControlEl.checked = e.musicControlEnabled || false;
 
         // 加载小剧场设置
         const charTheaterEnabledEl = document.getElementById('setting-char-theater-enabled');
@@ -1473,6 +1528,17 @@ async function saveSettingsFromSidebar() {
         const remarkInputForAware = document.getElementById('setting-char-remark');
         const oldRemarkNameForAware = remarkInputForAware ? (remarkInputForAware.dataset.oldRemarkNameForAware || '') : (e.remarkName || '');
         const newRemarkNameForAware = remarkInputForAware ? (remarkInputForAware.value || '').trim() : (e.remarkName || '');
+        const oldSelfToggleSettingsEnabled = !!e.selfToggleSettingsEnabled;
+        const oldFavoriteMemoryAllCharacterEnabled = !!e.favoriteMemoryAllCharacterEnabled;
+        const oldFavoriteMemoryUserAllEnabled = !!e.favoriteMemoryUserAllEnabled;
+        const oldCharacterNoReplyEnabled = !!e.characterNoReplyEnabled;
+        const oldCharacterCanChangeUserNickname = !!e.characterCanChangeUserNickname;
+        const oldMusicControlEnabled = !!e.musicControlEnabled;
+        const oldCharacterPeriodAwareEnabled = !!e.characterPeriodAwareEnabled;
+        const oldCharReminderEnabled = !!e.charReminderEnabled;
+        const oldCanBlockUser = e.canBlockUser !== false;
+        const oldPhoneControlEnabled = !!e.phoneControlEnabled;
+
         const remarkAwareEl = document.getElementById('setting-character-remark-aware-enabled');
         e.characterRemarkAwareEnabled = !!(remarkAwareEl && remarkAwareEl.checked);
         const favoriteAwareEl = document.getElementById('setting-character-favorite-aware-enabled');
@@ -1481,6 +1547,8 @@ async function saveSettingsFromSidebar() {
         e.characterUserFavoriteAwareEnabled = !!(userFavoriteAwareEl && userFavoriteAwareEl.checked);
         const periodAwareEl = document.getElementById('setting-character-period-aware-enabled');
         e.characterPeriodAwareEnabled = !!(periodAwareEl && periodAwareEl.checked);
+        const selfToggleSettingsEl = document.getElementById('setting-self-toggle-settings-enabled');
+        e.selfToggleSettingsEnabled = !!(selfToggleSettingsEl && selfToggleSettingsEl.checked);
         const favoriteMemoryOwnEl = document.getElementById('setting-favorite-memory-own-enabled');
         e.favoriteMemoryOwnEnabled = !!(favoriteMemoryOwnEl && favoriteMemoryOwnEl.checked);
         const favoriteMemoryAllCharacterEl = document.getElementById('setting-favorite-memory-all-character-enabled');
@@ -1526,6 +1594,19 @@ async function saveSettingsFromSidebar() {
         }
         e.myAvatar = _newMyAvatar;
         e.myName = document.getElementById('setting-my-name').value;
+        const oldUserNicknameForAware = e.myNickname || '';
+        const myNicknameInput = document.getElementById('setting-my-nickname');
+        const newUserNicknameForAware = myNicknameInput ? (myNicknameInput.value || '').trim() : oldUserNicknameForAware;
+        if (oldUserNicknameForAware !== newUserNicknameForAware) {
+            e.myNickname = newUserNicknameForAware;
+            e.pendingUserNicknameChange = {
+                oldNickname: oldUserNicknameForAware,
+                newNickname: newUserNicknameForAware,
+                changedAt: Date.now()
+            };
+        } else {
+            e.myNickname = newUserNicknameForAware;
+        }
         e.myPersona = document.getElementById('setting-my-persona').value;
         e.theme = document.getElementById('setting-theme-color').value;
         e.maxMemory = document.getElementById('setting-max-memory').value;
@@ -1556,6 +1637,10 @@ async function saveSettingsFromSidebar() {
         e.characterNoReplyEnabled = charNoReplyEl ? charNoReplyEl.checked : false;
         const charChangeRemarkEl = document.getElementById('setting-char-change-remark-enabled');
         e.characterChangeRemarkEnabled = charChangeRemarkEl ? charChangeRemarkEl.checked : false;
+        const charChangeUserNicknameEl = document.getElementById('setting-char-change-user-nickname-enabled');
+        e.characterCanChangeUserNickname = charChangeUserNicknameEl ? charChangeUserNicknameEl.checked : false;
+        const charMusicControlEl = document.getElementById('setting-char-music-control-enabled');
+        e.musicControlEnabled = charMusicControlEl ? charMusicControlEl.checked : false;
 
         // 保存小剧场设置
         const charTheaterEnabledSave = document.getElementById('setting-char-theater-enabled');
@@ -1730,6 +1815,17 @@ async function saveSettingsFromSidebar() {
             e.phoneControlVisibleFolderIds = Array.from(phoneControlFolderCheckboxes).filter(cb => cb.checked).map(cb => cb.value);
         }
 
+        trackManualSelfToggleSettingChange(e, 'selfToggleSettingsEnabled', oldSelfToggleSettingsEnabled, !!e.selfToggleSettingsEnabled);
+        trackManualSelfToggleSettingChange(e, 'favoriteMemoryAllCharacterEnabled', oldFavoriteMemoryAllCharacterEnabled, !!e.favoriteMemoryAllCharacterEnabled);
+        trackManualSelfToggleSettingChange(e, 'favoriteMemoryUserAllEnabled', oldFavoriteMemoryUserAllEnabled, !!e.favoriteMemoryUserAllEnabled);
+        trackManualSelfToggleSettingChange(e, 'characterNoReplyEnabled', oldCharacterNoReplyEnabled, !!e.characterNoReplyEnabled);
+        trackManualSelfToggleSettingChange(e, 'characterCanChangeUserNickname', oldCharacterCanChangeUserNickname, !!e.characterCanChangeUserNickname);
+        trackManualSelfToggleSettingChange(e, 'musicControlEnabled', oldMusicControlEnabled, !!e.musicControlEnabled);
+        trackManualSelfToggleSettingChange(e, 'characterPeriodAwareEnabled', oldCharacterPeriodAwareEnabled, !!e.characterPeriodAwareEnabled);
+        trackManualSelfToggleSettingChange(e, 'charReminderEnabled', oldCharReminderEnabled, !!e.charReminderEnabled);
+        trackManualSelfToggleSettingChange(e, 'canBlockUser', oldCanBlockUser, e.canBlockUser !== false);
+        trackManualSelfToggleSettingChange(e, 'phoneControlEnabled', oldPhoneControlEnabled, !!e.phoneControlEnabled);
+
         // 角色设置只保存当前角色，避免“保存所有更改”触发全库 saveData() 导致卡顿。
         // 不使用 Promise.all，避免 iOS/Safari 小网页壳里并发 IndexedDB 写入卡死。
         if (typeof saveCharacterData === 'function') {
@@ -1746,7 +1842,9 @@ async function saveSettingsFromSidebar() {
         }
 
         if (typeof showToast === 'function') {
-            if (e.characterRemarkAwareEnabled && e.pendingUserRemarkChange) {
+            if (e.pendingUserNicknameChange) {
+                showToast('设置已保存，昵称变化已记录。');
+            } else if (e.characterRemarkAwareEnabled && e.pendingUserRemarkChange) {
                 showToast('设置已保存，备注变化已记录。');
             } else {
                 showToast('设置已保存！');

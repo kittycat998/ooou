@@ -479,7 +479,7 @@ function triggerReminder(char, reminder) {
 }
 
 // --- AI 标签解析：从角色回复中提取提醒指令 ---
-function parseReminderTags(content, charId) {
+function parseReminderTags(content, charId, noSave) {
     const char = db.characters.find(c => c.id === charId);
     if (!char || !char.charReminderEnabled) return content;
     if (!char.reminders) char.reminders = [];
@@ -584,7 +584,7 @@ function parseReminderTags(content, charId) {
         cleaned = cleaned.replace(match[0], '');
     }
 
-    if (cleaned !== content) saveData();
+    if (cleaned !== content && !noSave) saveData();
     return cleaned.replace(/\n\s*\n/g, '\n').trim();
 }
 

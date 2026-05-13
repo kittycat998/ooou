@@ -186,8 +186,329 @@ const globalSettingKeys = [
 ];
 if (typeof window !== 'undefined') window.globalSettingKeysForBackup = globalSettingKeys;
 
-const appVersion = "WOW-v55.8-all-character-favorites-access-2026-05-08";
+const appVersion = "WOW-v57.6.6-music-system-text-2026-05-13";
 const updateLog = [
+    {
+        version: "WOW v57.6.6",
+        date: "2026-05-13",
+        notes: [
+            "WOW v57.6.6：调整一起听歌切歌小灰条文案。",
+            "角色上一首/下一首成功后统一显示为：角色名切歌：歌曲名。",
+            "不改音乐控制逻辑、不改悬浮按钮、不改保存底座。"
+        ]
+    },
+    {
+        version: "WOW v57.6.5",
+        date: "2026-05-13",
+        notes: [
+            "WOW v57.6.5：优化一起听歌隐藏入口样式。",
+            "隐藏态入口改为淡灰小点，不再显示粉色外圈、底色和边框；保留较大的透明点击热区。",
+            "基于 v57.6.4，保留 body 顶层 z-index 修复、展开面板拖动和音乐 pending 最新优先逻辑。"
+        ]
+    },
+    {
+        version: "WOW v57.6.2",
+        date: "2026-05-13",
+        notes: [
+            "WOW v57.6.2：修复聊天页一起听歌按钮隐藏后找不到入口的问题。",
+            "修复聊天主题/背景装饰层遮挡一起听歌悬浮入口的问题：悬浮播放器改为挂载到 body 顶层，并提高层级与点击优先级。",
+            "保留隐藏后的真实小点恢复入口，避免被主题盖住后看不见/点不到。",
+            "保留 v57.6.1 的展开面板拖动、位置记忆和音乐 pending 最新优先逻辑。"
+        ]
+    },
+    {
+        version: "WOW v57.6.1",
+        date: "2026-05-13",
+        notes: [
+            "WOW v57.6.1：修复聊天页一起听歌悬浮窗展开后无法拖动、容易卡在屏幕边缘的问题。",
+            "WOW v57.6：优化聊天页一起听歌悬浮按钮隐藏逻辑。",
+            "悬浮播放器展开后可点击“隐藏”，平常隐藏 🎧 图标，只保留原位置隐形热区。",
+            "再次点击同一位置会显示 🎧；拖动位置仍会记住。",
+            "基于 v57.5.1，保留音乐 pending 计时器清理与最后一次切歌优先逻辑。"
+        ]
+    },
+    {
+        version: "WOW v57.5.1",
+        date: "2026-05-13",
+        notes: [
+            "WOW v57.5.1：清理一起听歌 pending 合并保存的内部计时器。",
+            "_musicControlSaveTimer 不再挂到角色对象上，改为模块级 Map 管理，避免临时字段被写进 IndexedDB。",
+            "保存前兼容清理旧测试包可能残留的 _musicControlSaveTimer，不改音乐 pending 和保存底座。"
+        ]
+    },
+    {
+        version: "WOW v57.5",
+        date: "2026-05-13",
+        notes: [
+            "WOW v57.5：修复连续切歌时角色按顺序感知旧歌曲的问题。",
+            "用户连续 A→B→C 切歌时，pendingMusicControlEvent 只保留最后一次操作，并通过 seq 防止旧事件覆盖/误清新事件。",
+            "音乐 pending 保存做短延迟合并，减少连续切歌时旧保存迟到导致的感知错位。",
+            "不改音乐分享、不改歌词感知、不改保存底座。"
+        ]
+    },
+    {
+        version: "WOW v57.4",
+        date: "2026-05-13",
+        notes: [
+            "WOW v57.4：优化聊天页一起听歌悬浮按钮。",
+            "悬浮按钮图标改为 🎧，去掉外层白色圆圈，并支持拖动位置记忆。",
+            "修复 AI 回复生成期间用户继续切歌时，旧回复结束可能误清最新音乐 pending 的问题。",
+            "不改音乐分享、不改歌词感知、不改保存底座。"
+        ]
+    },
+    {
+        version: "WOW v57.2",
+        date: "2026-05-13",
+        notes: [
+            "WOW v57.2：修复一起听歌切歌指令作用域问题。",
+            "上一首/下一首不再调用 initMusicPlayer 内部的 playNextSongAuto/playSongAt，避免 Safari 报 Can't find variable。",
+            "暂停、继续播放、状态感知、pending 清除逻辑不变。"
+        ]
+    },
+    {
+        version: "WOW v57.1",
+        date: "2026-05-13",
+        notes: [
+            "WOW v57.1：一起听歌 MVP 细节修正。",
+            "补充：点击歌单中的单曲播放时，也会记录待感知音乐操作。",
+            "修复：角色执行继续播放时，如果浏览器拦截自动播放，不再显示为成功播放。",
+            "角色设置页新增“允许角色一起听歌/控制音乐”开关。",
+            "角色可感知当前音乐状态，并使用 [MUSIC_NEXT]、[MUSIC_PREV]、[MUSIC_PAUSE]、[MUSIC_PLAY] 控制音乐。",
+            "执行音乐控制后会插入 system-display 小灰条；用户手动切歌/暂停/继续时，当前聊天角色可轻量感知。",
+            "本版不做搜索点歌、不做歌词感知、不做分享歌曲邀请卡、不改保存底座。"
+        ]
+    },
+    {
+        version: "WOW v56.2.1",
+        date: "2026-05-13",
+        notes: [
+            "WOW v56.2.1：补充“允许修改我的昵称”的开关感知中文标签。",
+            "角色感知手动开关变化时，不再看到 characterCanChangeUserNickname 字段名。",
+            "只改中文显示标签，不改保存逻辑、不改 pending 逻辑。"
+        ]
+    },
+    {
+        version: "WOW v56.2",
+        date: "2026-05-13",
+        notes: [
+            "WOW v56.2：补充“允许角色修改我的昵称”手动开关变化的感知。",
+            "用户手动开启/关闭该开关后，会进入 pendingSettingControlEvents，角色下一轮可自然感知。",
+            "pending 仍遵循成功回复并保存后再清除；不改昵称主逻辑、不改保存底座。"
+        ]
+    },
+    {
+        version: "WOW v56.1",
+        date: "2026-05-13",
+        notes: [
+            "WOW v56.1：把“允许角色修改我的昵称”加入角色自行操控开关白名单。",
+            "角色在开启“允许角色自行操控开关”后，可用 SETTING_TOGGLE 开启或关闭 characterCanChangeUserNickname。",
+            "不改昵称主逻辑、不改保存逻辑。"
+        ]
+    },
+    {
+        version: "WOW v56",
+        date: "2026-05-13",
+        notes: [
+            "WOW v56：新增“我的昵称”功能。",
+            "角色设置页在“我的名字”下方新增“我的昵称”，并新增“允许角色修改我的昵称”开关。",
+            "用户手动修改我的昵称后，角色可在下一轮成功回复时感知；pending 仍遵循成功回复后再清除。",
+            "角色可使用 [CHANGE_USER_NICKNAME:新昵称] 修改自己对用户的专属昵称；执行后插入系统提示。",
+            "保存方式继续使用当前角色局部保存，不改全局保存底座。"
+        ]
+    },
+    {
+        version: "WOW v55.9.26",
+        date: "2026-05-13",
+        notes: [
+            "WOW v55.9.26：pending 感知事件改为成功回复后再清除。",
+            "感知我改备注、收藏寄语/批注、设置控制等 pending 事件，必须等本轮成功写入 assistant 回复并保存后才会消费。",
+            "API 失败、空回复、只有指令没有可见回复时，不再清掉 pending，避免角色错过本轮感知。",
+            "先保存带 pending 的新回复，再清 pending 并二次保存；如果清除保存失败，会恢复内存 pending 并抛错。"
+        ]
+    },
+    {
+        version: "WOW v55.9.25",
+        date: "2026-05-13",
+        notes: [
+            "WOW v55.9.25：只修改“允许角色自行修改备注”的提示词。",
+            "新提示词强调只能修改角色自己在用户手机里的显示备注，使用 [CHANGE_REMARK_NAME:新备注] 格式。",
+            "不改保存逻辑、不改执行逻辑、不新增功能。"
+        ]
+    },
+    {
+        version: "WOW v55.9.24",
+        date: "2026-05-10",
+        notes: [
+            "WOW v55.9.24：合并两版保存审计持久化方案，不改变保存逻辑。",
+            "保留 localStorage 最近 300 条审计日志，同时持久化 highWater，用于跨刷新继续检测旧 history 迟到写入。",
+            "启动后输出 [SAVE-AUDIT-LOADED] 摘要；window.__ovoDumpSaveAudit() 导出日志，window.__ovoClearSaveAudit() 清空日志。"
+        ]
+    },
+    {
+        version: "WOW v55.9.23",
+        date: "2026-05-10",
+        notes: [
+            "WOW v55.9.23：保存审计日志新增 localStorage 持久化，方便退出/刷新后继续查看。",
+            "审计日志最多保留最近 300 条；本合并版兼容 ovo_save_audit_buffer_v1 与 ovo-save-audit-buffer-v1 两种 key。",
+            "新增 window.__ovoClearSaveAudit() 可清空日志。"
+        ]
+    },
+
+    {
+        version: "WOW v55.9.22",
+        date: "2026-05-10",
+        notes: [
+            "WOW v55.9.22：增强保存审计日志，不改变保存逻辑。",
+            "保存日志新增自动来源 reason、调用栈 stack、activeChat 快照，以及旧数据写入预警 [SAVE-STALE-WARN]。",
+            "新增 window.__ovoSaveAuditBuffer 和 window.__ovoDumpSaveAudit()，方便回退后复制最近保存日志给调试窗口。"
+        ]
+    },
+    {
+        version: "WOW v55.9.21",
+        date: "2026-05-10",
+        notes: [
+            "WOW v55.9.21：新增保存审计日志，用于排查聊天记录回退/旧 history 迟到写入。",
+            "saveData、saveCharacterData、saveGroupData 会在写库前后输出关键字段：historyLength、lastMessageTime、lastMessagePreview、saveSeq 等。",
+            "本版只打 console 日志，不改变保存逻辑；默认开启，可在控制台设置 window.__ovoSaveAuditEnabled = false 关闭。"
+        ]
+    },
+    {
+        version: "WOW v55.9.19",
+        date: "2026-05-09",
+        notes: [
+            "WOW v55.9.19：继续清理 AI 回复链路里的全量保存点。",
+            "NO_REPLY 状态卡改为只保存当前角色/群聊，不再调用全量 saveData。",
+            "普通 AI 回复末尾只有 favorites 真的变化时才保存 favorites，不再每轮无条件保存。",
+            "addCharacterFavorite 返回是否新增成功，供回复链路判断 favoritesDirty。"
+        ]
+    },
+    {
+        version: "WOW v55.9.17",
+        date: "2026-05-10",
+        notes: [
+            "WOW v55.9.17：把 saveData 从一个超大 IndexedDB transaction 改为分步逐条保存。",
+            "避免 iOS/Safari 因全库大事务耗时过长而中止/回滚，导致数据回到上次成功保存点。",
+            "保留 v55.9.16 的头像系统 deferSave 修复，以及 v55.9.15/14/13 的中途保存延后修复。",
+            "本版先修语法错误和保存事务结构，不新增功能。"
+        ]
+    },
+    {
+        version: "WOW v55.9.16",
+        date: "2026-05-10",
+        notes: [
+            "WOW v55.9.16：修复头像系统在 AI 回复处理中途触发 saveData 的问题。",
+            "executeAvatarActions 新增 deferSave 选项；handleAiReplyContent 调用时传 {deferSave:true}，头像切换/情头操作只更新内存，等本轮回复末尾统一落盘。",
+            "头像 saveData 可能把「有用户消息、无 AI 回复」的中间状态写入 IndexedDB 和快照，末尾 saveData 若事务失败则可能停在该状态。",
+            "本版在 v55.9.15 基础上新增，不改其他功能。"
+        ]
+    },
+    {
+        version: "WOW v55.9.15",
+        date: "2026-05-10",
+        notes: [
+            "WOW v55.9.15：清理 AI 回复处理中剩余的中途保存点（二）。",
+            "移除「更换主题」指令执行时的中途 saveData，主题变更只更新内存，等本轮回复末尾统一落盘。",
+            "parseReminderTags 新增 noSave 参数；AI 回复处理中调用时传 noSave=true，不再中途 saveData。",
+            "修复 _ovoRestoreGlobalEmergencySnapshot 里 _ovoMarkGlobalSnapshotConfirmed 参数传错，避免恢复快照后 confirmed 时间戳不更新。"
+        ]
+    },
+    {
+        version: "WOW v55.9.14",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.9.14：修复 v55.9.13 角色自动收藏 deferSave 参数未加入函数签名的问题。",
+            "addCharacterFavorite 现在接收 options = {}，避免角色自动收藏触发 ReferenceError。",
+            "保留 v55.9.13 的备注/收藏中途保存延后逻辑，不新增其他功能。"
+        ]
+    },
+    {
+        version: "WOW v55.9.13",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.9.13：清理 AI 回复处理中剩余的中途保存点。",
+            "角色自行修改备注不再中途 saveData，备注名与 system-display 消息改为等本轮回复末尾统一保存。",
+            "角色自动收藏 addCharacterFavorite 新增 deferSave/noSave 选项，AI 回复处理中调用时不再中途保存。",
+            "本版不新增功能，专门降低聊天消息回退概率。"
+        ]
+    },
+    {
+        version: "WOW v55.9.12",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.9.12：在全局应急快照基础上增加 30 秒节流，避免每次保存都序列化完整 db 导致卡顿。",
+            "快照跳过、快照失败、主保存失败分开处理：跳过不等于失败，跳过时不会更新快照确认时间。",
+            "快照失败但主保存成功时只做轻提示；快照成功但主保存失败时提示已有全局快照可恢复。",
+            "快照和主保存都失败时只强提示用户不要退出并立刻导出完整备份，不再写最近 120 条或操作摘要。"
+        ]
+    },
+    {
+        version: "WOW v55.9.11",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.9.11：基于 v55.9.6 新增全局应急快照，处理白屏后全局数据回退。",
+            "每次写入 IndexedDB 前，会先把当前完整 db 写入 CacheStorage 全局快照；写库成功后记录确认时间。",
+            "启动后若发现快照时间新于最后确认写库时间，会弹窗询问是否恢复全局快照。",
+            "恢复是手动确认的完整数据库恢复，覆盖 IndexedDB 到快照时刻；适合日记、设置、收藏、聊天等一起回退的情况。"
+        ]
+    },
+    {
+        version: "WOW v55.9.6",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.9.6：优化角色操控手机时的目标名匹配。",
+            "phone-control 读取、代发、删除、切换设置、清空聊天等操作保留原指令格式，但目标名支持忽略空格、引号、括号等装饰。",
+            "优先精确匹配，只有唯一包含匹配时才放宽命中，降低因昵称/轻微格式差异找不到人的概率。"
+        ]
+    },
+    {
+        version: "WOW v55.9.5",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.9.5：回退 v55.9.4 的待删除列表方案，改为更小范围修复。",
+            "角色操控手机删除好友时，只额外删除 IndexedDB characters 表里的对应单条角色记录。",
+            "不改 saveData 主流程，不新增 pending 删除列表，不影响 phone-control 指令解析。"
+        ]
+    },
+    {
+        version: "WOW v55.9.3",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.9.3：继续修复聊天记录回退问题。",
+            "移除 phone-control 指令执行过程中的中途 saveData。",
+            "角色查看聊天、代发消息、删除角色、切换设置、清空聊天等手机操控动作只改当前内存对象。",
+            "等 AI 回复写入 history 后，由本轮回复处理末尾统一保存，避免旧 history 抢写覆盖新消息。"
+        ]
+    },
+    {
+        version: "WOW v55.9.2",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.9.2：手机操控权限普通开关改为直接关闭。",
+            "关闭“允许角色查看并操控你的手机”时，不再触发“TA 可能不会轻易同意…”和角色主动阻拦回复。",
+            "保留强制关闭按钮，但普通开关现在也能直接关闭。",
+            "本版不改角色自行操作开关、不改收藏/经期感知、不改聊天保存链路。"
+        ]
+    },
+    {
+        version: "WOW v55.9.1",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.9.1：修复角色自行操作功能开关导致聊天消息回退的问题。",
+            "移除 SETTING_TOGGLE 指令执行过程中的中途 saveCharacterData/saveData。",
+            "开关变更只修改当前角色对象，等 AI 回复写入 history 后由原聊天流程末尾统一保存。",
+            "不改白名单、不改 UI、不改 pendingSettingControlEvents 逻辑。"
+        ]
+    },
+    {
+        version: "WOW v55.9",
+        date: "2026-05-08",
+        notes: [
+            "WOW v55.9：新增“允许角色自行操作功能开关”总开关。",
+            "开启后，角色可用隐藏指令自行开启/关闭白名单内功能；每轮最多执行两个，执行后 toast 告知用户。",
+            "白名单包括：全部角色收藏、用户全部角色收藏、角色不回消息、经期感知、提醒事项、拉黑用户、手机操控。",
+            "用户手动开启/关闭总开关或白名单小开关后，会作为 pending 事件在下一轮告知角色；不写入聊天 history。"
+        ]
+    },
     {
         version: "WOW v55.8",
         date: "2026-05-08",
@@ -996,6 +1317,559 @@ function initDatabase() {
     });
 }
 
+
+// 全局应急快照：用于处理 iOS/PWA 白屏后 IndexedDB 回到旧保存点的问题。
+// 主存档仍是 IndexedDB；这里把完整 db 放到 CacheStorage，localStorage 只记录时间戳。
+// 恢复时必须手动确认，不会自动覆盖当前数据库。
+const OVO_EMERGENCY_CACHE_NAME = 'ovo-emergency-global-snapshot-v1';
+const OVO_EMERGENCY_SNAPSHOT_URL = (typeof location !== 'undefined')
+    ? `${location.origin}${location.pathname}?ovo_emergency_global_snapshot=latest`
+    : '/?ovo_emergency_global_snapshot=latest';
+const OVO_LAST_CONFIRMED_SAVE_TS_KEY = 'ovo-last-confirmed-idb-save-at';
+const OVO_LAST_SNAPSHOT_TS_KEY = 'ovo-last-global-snapshot-at';
+
+const OVO_GLOBAL_SNAPSHOT_INTERVAL_MS = 30000;
+let _ovoLastGlobalSnapshotAttemptAt = 0;
+let _ovoLastSnapshotWarningAt = 0;
+let _ovoLastMainSaveWarningAt = 0;
+
+async function _ovoWriteGlobalEmergencySnapshot(reason, options) {
+    options = options || {};
+    const now = Date.now();
+    const force = !!options.force;
+
+    if (!force && _ovoLastGlobalSnapshotAttemptAt && now - _ovoLastGlobalSnapshotAttemptAt < OVO_GLOBAL_SNAPSHOT_INTERVAL_MS) {
+        return { savedAt: 0, skipped: true, failed: false, error: null };
+    }
+
+    if (typeof caches === 'undefined') {
+        return { savedAt: 0, skipped: false, failed: true, error: new Error('CacheStorage unavailable') };
+    }
+
+    _ovoLastGlobalSnapshotAttemptAt = now;
+    const savedAt = now;
+    try {
+        const payload = {
+            savedAt,
+            appVersion: (typeof appVersion !== 'undefined') ? appVersion : '',
+            reason: reason || '',
+            db
+        };
+        const text = JSON.stringify(payload);
+        const cache = await caches.open(OVO_EMERGENCY_CACHE_NAME);
+        await cache.put(
+            new Request(OVO_EMERGENCY_SNAPSHOT_URL),
+            new Response(text, { headers: { 'Content-Type': 'application/json' } })
+        );
+        localStorage.setItem(OVO_LAST_SNAPSHOT_TS_KEY, String(savedAt));
+        return { savedAt, skipped: false, failed: false, error: null };
+    } catch (e) {
+        console.warn('[OVO全局应急快照] 写入失败:', e);
+        return { savedAt: 0, skipped: false, failed: true, error: e };
+    }
+}
+
+function _ovoMarkGlobalSnapshotConfirmed(snapshotResult) {
+    if (!snapshotResult || snapshotResult.skipped || snapshotResult.failed || !snapshotResult.savedAt) return;
+    try {
+        localStorage.setItem(OVO_LAST_CONFIRMED_SAVE_TS_KEY, String(snapshotResult.savedAt));
+    } catch (e) {
+        console.warn('[OVO全局应急快照] 标记确认失败:', e);
+    }
+}
+
+function _ovoWarnSnapshotFailedButMainSaveSucceeded(snapshotResult) {
+    if (!snapshotResult || !snapshotResult.failed) return;
+    const now = Date.now();
+    if (_ovoLastSnapshotWarningAt && now - _ovoLastSnapshotWarningAt < 5 * 60 * 1000) return;
+    _ovoLastSnapshotWarningAt = now;
+    if (typeof showToast === 'function') {
+        showToast('主保存已完成，但全局应急快照写入失败');
+    }
+}
+
+function _ovoShowMainSaveFailureModal(snapshotResult, saveError) {
+    try {
+        const hasSnapshot = !!(snapshotResult && !snapshotResult.failed && !snapshotResult.skipped && snapshotResult.savedAt);
+        let modal = document.getElementById('ovo-main-save-failure-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'ovo-main-save-failure-modal';
+            modal.style.cssText = 'position:fixed;inset:0;z-index:100002;background:rgba(0,0,0,.42);display:flex;align-items:center;justify-content:center;padding:18px;';
+            modal.innerHTML = `
+                <div style="width:min(92vw,400px);background:#fff;border-radius:18px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.22);font-size:14px;line-height:1.6;color:#333;">
+                    <div style="font-weight:700;font-size:16px;margin-bottom:8px;" id="ovo-main-save-failure-title">保存失败</div>
+                    <div id="ovo-main-save-failure-text" style="color:#666;margin-bottom:14px;"></div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+                        <button type="button" id="ovo-main-save-failure-close-btn" class="btn btn-primary" style="padding:7px 12px;border-radius:10px;">我知道了</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+        }
+        const titleEl = document.getElementById('ovo-main-save-failure-title');
+        const textEl = document.getElementById('ovo-main-save-failure-text');
+        if (titleEl) titleEl.textContent = hasSnapshot ? '主保存失败，但已有全局快照' : '主保存和全局快照都失败';
+        if (textEl) {
+            textEl.textContent = hasSnapshot
+                ? '请不要刷新或退出。可以稍后重试保存；如果发生回退，下次打开会提示你恢复全局快照。'
+                : '请不要刷新或退出。当前页面内存里的数据通常还在，请立刻导出完整备份或复制重要内容。';
+        }
+        modal.style.display = 'flex';
+        const closeBtn = document.getElementById('ovo-main-save-failure-close-btn');
+        if (closeBtn) closeBtn.onclick = () => { modal.style.display = 'none'; };
+
+        const now = Date.now();
+        if (!_ovoLastMainSaveWarningAt || now - _ovoLastMainSaveWarningAt > 10 * 1000) {
+            _ovoLastMainSaveWarningAt = now;
+            if (typeof showToast === 'function') {
+                showToast(hasSnapshot ? '主保存失败，但已有全局快照' : '主保存和全局快照都失败，请立刻导出备份');
+            }
+        }
+    } catch (e) {
+        console.error('[OVO保存] 保存失败弹窗显示失败:', e, saveError);
+    }
+}
+
+async function _ovoReadGlobalEmergencySnapshot() {
+    if (typeof caches === 'undefined') return null;
+    try {
+        const cache = await caches.open(OVO_EMERGENCY_CACHE_NAME);
+        const res = await cache.match(new Request(OVO_EMERGENCY_SNAPSHOT_URL));
+        if (!res) return null;
+        return await res.json();
+    } catch (e) {
+        console.warn('[OVO全局应急快照] 读取失败:', e);
+        return null;
+    }
+}
+
+async function _ovoRestoreGlobalEmergencySnapshot(payload) {
+    if (!payload || !payload.db) throw new Error('应急快照为空');
+    const restored = payload.db;
+
+    await dexieDB.transaction('rw', dexieDB.tables, async () => {
+        if (dexieDB.characters) {
+            await dexieDB.characters.clear();
+            for (const character of (restored.characters || [])) {
+                if (character && character.id) await dexieDB.characters.put(character);
+            }
+        }
+
+        if (dexieDB.groups) {
+            await dexieDB.groups.clear();
+            for (const group of (restored.groups || [])) {
+                if (group && group.id) await dexieDB.groups.put(group);
+            }
+        }
+
+        if (dexieDB.worldBooks) {
+            await dexieDB.worldBooks.clear();
+            for (const worldBook of (restored.worldBooks || [])) {
+                if (worldBook && worldBook.id) await dexieDB.worldBooks.put(worldBook);
+            }
+        }
+
+        if (dexieDB.myStickers) {
+            await dexieDB.myStickers.clear();
+            for (const sticker of (restored.myStickers || [])) {
+                if (sticker && sticker.id) await dexieDB.myStickers.put(sticker);
+            }
+        }
+
+        if (dexieDB.archives) {
+            await dexieDB.archives.clear();
+            for (const archive of (restored.archives || [])) {
+                if (archive && archive.id) await dexieDB.archives.put(archive);
+            }
+        }
+
+        if (dexieDB.generatedImages && Array.isArray(restored.generatedImages)) {
+            await dexieDB.generatedImages.clear();
+            for (const image of restored.generatedImages) {
+                if (image && image.id) await dexieDB.generatedImages.put(image);
+            }
+        }
+
+        if (dexieDB.globalSettings) {
+            await dexieDB.globalSettings.clear();
+            for (const key of globalSettingKeys) {
+                if (restored[key] !== undefined) {
+                    await dexieDB.globalSettings.put({ key, value: restored[key] });
+                }
+            }
+        }
+    });
+
+    Object.keys(db).forEach(key => delete db[key]);
+    Object.assign(db, restored);
+
+    const confirmedAt = payload.savedAt || Date.now();
+    try {
+        localStorage.setItem(OVO_LAST_CONFIRMED_SAVE_TS_KEY, String(confirmedAt));
+    } catch (e) {
+        console.warn('[OVO全局应急快照] 恢复后标记confirmed失败:', e);
+    }
+}
+
+function _ovoShowGlobalEmergencyRestoreModal(payload) {
+    if (!payload || !payload.db) return;
+    try {
+        let modal = document.getElementById('ovo-global-emergency-restore-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'ovo-global-emergency-restore-modal';
+            modal.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.38);display:flex;align-items:center;justify-content:center;padding:18px;';
+            modal.innerHTML = `
+                <div style="width:min(92vw,400px);background:#fff;border-radius:18px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.2);font-size:14px;line-height:1.6;color:#333;">
+                    <div style="font-weight:700;font-size:16px;margin-bottom:8px;">发现未确认保存的全局应急快照</div>
+                    <div id="ovo-global-emergency-restore-text" style="color:#666;margin-bottom:12px;"></div>
+                    <div style="font-size:12px;color:#999;margin-bottom:14px;">这是完整数据库快照，适合处理白屏后全局回退。恢复会把 IndexedDB 恢复到快照时刻，不会自动执行，需你手动确认。</div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+                        <button type="button" id="ovo-global-emergency-restore-btn" class="btn btn-primary" style="padding:7px 12px;border-radius:10px;">恢复全局快照</button>
+                        <button type="button" id="ovo-global-emergency-ignore-btn" class="btn btn-neutral" style="padding:7px 12px;border-radius:10px;">暂不处理</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+        }
+
+        const textEl = document.getElementById('ovo-global-emergency-restore-text');
+        if (textEl) {
+            const dt = payload.savedAt ? new Date(payload.savedAt).toLocaleString() : '未知时间';
+            const chars = payload.db && payload.db.characters ? payload.db.characters.length : 0;
+            const groups = payload.db && payload.db.groups ? payload.db.groups.length : 0;
+            textEl.textContent = `快照时间：${dt}。包含 ${chars} 个角色、${groups} 个群聊，以及日记/设置/收藏等全局数据。`;
+        }
+
+        modal.style.display = 'flex';
+
+        const restoreBtn = document.getElementById('ovo-global-emergency-restore-btn');
+        if (restoreBtn) {
+            restoreBtn.onclick = async () => {
+                restoreBtn.disabled = true;
+                const oldText = restoreBtn.textContent;
+                restoreBtn.textContent = '恢复中...';
+                try {
+                    await _ovoRestoreGlobalEmergencySnapshot(payload);
+                    if (typeof showToast === 'function') showToast('全局快照已恢复');
+                    modal.style.display = 'none';
+                    if (typeof renderChatList === 'function') renderChatList();
+                    if (typeof currentChatId !== 'undefined' && currentChatId && typeof renderMessages === 'function') {
+                        renderMessages(false, true);
+                    }
+                } catch (e) {
+                    console.error('[OVO全局应急快照] 恢复失败:', e);
+                    if (typeof showToast === 'function') showToast('恢复失败，请先导出当前数据');
+                } finally {
+                    restoreBtn.disabled = false;
+                    restoreBtn.textContent = oldText || '恢复全局快照';
+                }
+            };
+        }
+
+        const ignoreBtn = document.getElementById('ovo-global-emergency-ignore-btn');
+        if (ignoreBtn) ignoreBtn.onclick = () => { modal.style.display = 'none'; };
+    } catch (e) {
+        console.error('[OVO全局应急快照] 弹窗失败:', e);
+    }
+}
+
+async function _ovoCheckGlobalEmergencySnapshotAfterLoad() {
+    try {
+        const snapshotTs = parseInt(localStorage.getItem(OVO_LAST_SNAPSHOT_TS_KEY) || '0', 10) || 0;
+        const confirmedTs = parseInt(localStorage.getItem(OVO_LAST_CONFIRMED_SAVE_TS_KEY) || '0', 10) || 0;
+        if (!snapshotTs || snapshotTs <= confirmedTs + 500) return;
+
+        const payload = await _ovoReadGlobalEmergencySnapshot();
+        if (!payload || !payload.savedAt || payload.savedAt <= confirmedTs + 500) return;
+
+        setTimeout(() => _ovoShowGlobalEmergencyRestoreModal(payload), 800);
+    } catch (e) {
+        console.warn('[OVO全局应急快照] 启动检查失败:', e);
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.ovoCheckGlobalEmergencySnapshot = _ovoCheckGlobalEmergencySnapshotAfterLoad;
+}
+
+
+
+// 保存审计日志：排查聊天回退/旧 history 迟到写入用。
+// 默认开启；只打 console + localStorage 持久化，不改任何数据。
+const OVO_SAVE_AUDIT_STORAGE_KEY = 'ovo_save_audit_buffer_v1';
+const OVO_SAVE_AUDIT_STORAGE_LEGACY_KEYS = ['ovo-save-audit-buffer-v1'];
+const OVO_SAVE_AUDIT_HIGHWATER_KEY = 'ovo_save_audit_highwater_v1';
+const OVO_SAVE_AUDIT_MAX = 300;
+
+function _ovoLoadSaveAuditJson(key, fallback, extraKeys = []) {
+    try {
+        if (typeof localStorage === 'undefined') return fallback;
+        const keys = [key, ...(Array.isArray(extraKeys) ? extraKeys : [])];
+        for (const k of keys) {
+            const raw = localStorage.getItem(k);
+            if (!raw) continue;
+            const parsed = JSON.parse(raw);
+            if (parsed) return parsed;
+        }
+        return fallback;
+    } catch (_) {
+        return fallback;
+    }
+}
+
+function _ovoPrintSaveAuditStartupSummary() {
+    try {
+        if (typeof window === 'undefined') return;
+        const list = Array.isArray(window.__ovoSaveAuditBuffer) ? window.__ovoSaveAuditBuffer : [];
+        const highWater = window.__ovoSaveAuditHighWater || {};
+        if (!list.length && !Object.keys(highWater).length) return;
+        console.log('[SAVE-AUDIT-LOADED]', {
+            count: list.length,
+            highWaterCount: Object.keys(highWater).length,
+            recent: list.slice(-8)
+        });
+    } catch (_) {}
+}
+
+function _ovoPersistSaveAuditState() {
+    try {
+        if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+        const buffer = Array.isArray(window.__ovoSaveAuditBuffer) ? window.__ovoSaveAuditBuffer.slice(-OVO_SAVE_AUDIT_MAX) : [];
+        localStorage.setItem(OVO_SAVE_AUDIT_STORAGE_KEY, JSON.stringify(buffer));
+        localStorage.setItem(OVO_SAVE_AUDIT_HIGHWATER_KEY, JSON.stringify(window.__ovoSaveAuditHighWater || {}));
+    } catch (e) {
+        // 审计日志不能影响主保存；localStorage 满了就只保留内存日志。
+        console.warn('[SAVE-AUDIT-PERSIST-FAILED]', e);
+    }
+}
+
+function _ovoExposeSaveAuditHelpers() {
+    if (typeof window === 'undefined') return;
+    window.__ovoDumpSaveAudit = () => JSON.stringify(window.__ovoSaveAuditBuffer || [], null, 2);
+    window.__ovoClearSaveAudit = () => {
+        window.__ovoSaveAuditBuffer = [];
+        window.__ovoSaveAuditHighWater = {};
+        try {
+            if (typeof localStorage !== 'undefined') {
+                localStorage.removeItem(OVO_SAVE_AUDIT_STORAGE_KEY);
+                for (const k of OVO_SAVE_AUDIT_STORAGE_LEGACY_KEYS) localStorage.removeItem(k);
+                localStorage.removeItem(OVO_SAVE_AUDIT_HIGHWATER_KEY);
+            }
+        } catch (_) {}
+        return '保存审计日志已清空';
+    };
+}
+
+if (typeof window !== 'undefined') {
+    window.__ovoSaveAuditEnabled = window.__ovoSaveAuditEnabled !== false;
+    window.__ovoSaveSeq = window.__ovoSaveSeq || 0;
+    window.__ovoSaveAuditBuffer = window.__ovoSaveAuditBuffer || _ovoLoadSaveAuditJson(OVO_SAVE_AUDIT_STORAGE_KEY, [], OVO_SAVE_AUDIT_STORAGE_LEGACY_KEYS);
+    if (!Array.isArray(window.__ovoSaveAuditBuffer)) window.__ovoSaveAuditBuffer = [];
+    if (window.__ovoSaveAuditBuffer.length > OVO_SAVE_AUDIT_MAX) window.__ovoSaveAuditBuffer = window.__ovoSaveAuditBuffer.slice(-OVO_SAVE_AUDIT_MAX);
+    window.__ovoSaveAuditHighWater = window.__ovoSaveAuditHighWater || _ovoLoadSaveAuditJson(OVO_SAVE_AUDIT_HIGHWATER_KEY, {});
+    _ovoExposeSaveAuditHelpers();
+    setTimeout(_ovoPrintSaveAuditStartupSummary, 1000);
+}
+
+function _ovoGetSaveAuditStack() {
+    try {
+        const stack = (new Error()).stack || '';
+        return stack
+            .split('\n')
+            .slice(2, 9)
+            .map(line => line.trim())
+            .filter(line => line && !line.includes('_ovoBuildSaveAuditPayload') && !line.includes('_ovoBuildFullSaveAuditPayload') && !line.includes('_ovoGetSaveAuditStack'))
+            .join(' <- ');
+    } catch (_) {
+        return '';
+    }
+}
+
+function _ovoNormalizeSaveReason(reason, fallback) {
+    if (typeof reason === 'string' && reason && reason !== fallback) return reason;
+    const stack = _ovoGetSaveAuditStack();
+    const firstUseful = stack.split(' <- ').find(line => line && !line.includes('saveData') && !line.includes('saveCharacterData') && !line.includes('saveGroupData'));
+    return firstUseful ? `${fallback}:${firstUseful}` : (reason || fallback || 'unknown');
+}
+
+function _ovoGetLatestMessageMeta(target) {
+    const history = target && Array.isArray(target.history) ? target.history : null;
+    const last = history && history.length ? history[history.length - 1] : null;
+    return {
+        historyLength: history ? history.length : null,
+        lastMessageId: last && last.id,
+        lastMessageRole: last && last.role,
+        lastMessageTime: last && last.timestamp,
+        lastMessagePreview: last && typeof last.content === 'string' ? last.content.slice(0, 60) : ''
+    };
+}
+
+function _ovoFindLiveSaveTarget(type, id) {
+    try {
+        if (!id) return null;
+        if (type === 'character') return (db.characters || []).find(c => c && c.id === id) || null;
+        if (type === 'group') return (db.groups || []).find(g => g && g.id === id) || null;
+    } catch (_) {}
+    return null;
+}
+
+function _ovoGetActiveChatAuditMeta() {
+    try {
+        const id = (typeof currentChatId !== 'undefined') ? currentChatId : '';
+        const chatType = (typeof currentChatType !== 'undefined') ? currentChatType : '';
+        if (!id) return null;
+        const target = chatType === 'group'
+            ? (db.groups || []).find(g => g && g.id === id)
+            : (db.characters || []).find(c => c && c.id === id);
+        if (!target) return { id, chatType, missing: true };
+        return {
+            id,
+            chatType: chatType || 'character',
+            name: target.remarkName || target.realName || target.name || '',
+            ..._ovoGetLatestMessageMeta(target)
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
+function _ovoCheckSaveAuditStaleness(audit) {
+    try {
+        if (!audit || !audit.id || !audit.type || (audit.type !== 'character' && audit.type !== 'group')) return null;
+        if (typeof window === 'undefined') return null;
+        const key = `${audit.type}:${audit.id}`;
+        const highWater = window.__ovoSaveAuditHighWater[key];
+        const warnings = [];
+        if (highWater) {
+            if (Number.isFinite(audit.historyLength) && Number.isFinite(highWater.historyLength) && audit.historyLength < highWater.historyLength) {
+                warnings.push(`historyLength ${audit.historyLength} < seen ${highWater.historyLength}`);
+            }
+            if ((Number(audit.lastMessageTime) || 0) < (Number(highWater.lastMessageTime) || 0)) {
+                warnings.push(`lastMessageTime ${audit.lastMessageTime || 'empty'} < seen ${highWater.lastMessageTime || 'empty'}`);
+            }
+        }
+
+        const live = _ovoFindLiveSaveTarget(audit.type, audit.id);
+        if (live && live !== audit.__rawTarget) {
+            const liveMeta = _ovoGetLatestMessageMeta(live);
+            if (Number.isFinite(audit.historyLength) && Number.isFinite(liveMeta.historyLength) && audit.historyLength < liveMeta.historyLength) {
+                warnings.push(`saving older object than live db array: ${audit.historyLength} < live ${liveMeta.historyLength}`);
+            }
+            if ((Number(audit.lastMessageTime) || 0) < (Number(liveMeta.lastMessageTime) || 0)) {
+                warnings.push(`saving older lastMessageTime than live db array: ${audit.lastMessageTime || 'empty'} < live ${liveMeta.lastMessageTime || 'empty'}`);
+            }
+        }
+
+        const nextHighWater = {
+            historyLength: Math.max(Number(audit.historyLength) || 0, Number(highWater && highWater.historyLength) || 0),
+            lastMessageTime: Math.max(Number(audit.lastMessageTime) || 0, Number(highWater && highWater.lastMessageTime) || 0),
+            lastMessageId: audit.lastMessageId || (highWater && highWater.lastMessageId) || '',
+            seq: audit.seq,
+            at: audit.at
+        };
+        window.__ovoSaveAuditHighWater[key] = nextHighWater;
+        return warnings.length ? warnings : null;
+    } catch (e) {
+        return [`staleness-check-error: ${e && e.message ? e.message : e}`];
+    }
+}
+
+function _ovoBuildSaveAuditPayload(type, target, reason) {
+    if (typeof window !== 'undefined') {
+        window.__ovoSaveSeq = (window.__ovoSaveSeq || 0) + 1;
+    }
+
+    const audit = {
+        seq: (typeof window !== 'undefined') ? window.__ovoSaveSeq : 0,
+        type: type || '',
+        reason: _ovoNormalizeSaveReason(reason, type === 'group' ? 'saveGroupData' : 'saveCharacterData'),
+        id: target && target.id,
+        name: target && (target.remarkName || target.realName || target.name || ''),
+        ..._ovoGetLatestMessageMeta(target),
+        activeChat: _ovoGetActiveChatAuditMeta(),
+        stack: _ovoGetSaveAuditStack(),
+        at: new Date().toISOString(),
+        __rawTarget: target
+    };
+    const staleWarnings = _ovoCheckSaveAuditStaleness(audit);
+    if (staleWarnings) audit.staleWarnings = staleWarnings;
+    return audit;
+}
+
+function _ovoStripAuditPayload(payload) {
+    if (!payload || typeof payload !== 'object') return payload;
+    const copy = { ...payload };
+    delete copy.__rawTarget;
+    return copy;
+}
+
+function _ovoLogSaveAudit(stage, payload, error) {
+    try {
+        if (typeof window !== 'undefined' && window.__ovoSaveAuditEnabled === false) return;
+        const safePayload = _ovoStripAuditPayload(payload);
+        if (typeof window !== 'undefined') {
+            const item = { stage, payload: safePayload, error: error ? String(error && error.message ? error.message : error) : '', at: new Date().toISOString() };
+            if (!Array.isArray(window.__ovoSaveAuditBuffer)) window.__ovoSaveAuditBuffer = [];
+            window.__ovoSaveAuditBuffer.push(item);
+            if (window.__ovoSaveAuditBuffer.length > OVO_SAVE_AUDIT_MAX) {
+                window.__ovoSaveAuditBuffer.splice(0, window.__ovoSaveAuditBuffer.length - OVO_SAVE_AUDIT_MAX);
+            }
+            _ovoExposeSaveAuditHelpers();
+            _ovoPersistSaveAuditState();
+        }
+        if (payload && payload.staleWarnings && payload.staleWarnings.length) console.warn('[SAVE-STALE-WARN]', safePayload);
+        if (error) console.warn(stage, safePayload, error);
+        else console.log(stage, safePayload);
+    } catch (_) {}
+}
+
+function _ovoBuildFullSaveAuditPayload(reason) {
+    if (typeof window !== 'undefined') {
+        window.__ovoSaveSeq = (window.__ovoSaveSeq || 0) + 1;
+    }
+
+    const lastPrivate = (db.characters || [])
+        .filter(c => c && Array.isArray(c.history) && c.history.length)
+        .map(c => ({ chat: c, last: c.history[c.history.length - 1] }))
+        .sort((a, b) => (Number(b.last.timestamp) || 0) - (Number(a.last.timestamp) || 0))[0];
+
+    const lastGroup = (db.groups || [])
+        .filter(g => g && Array.isArray(g.history) && g.history.length)
+        .map(g => ({ chat: g, last: g.history[g.history.length - 1] }))
+        .sort((a, b) => (Number(b.last.timestamp) || 0) - (Number(a.last.timestamp) || 0))[0];
+
+    return {
+        seq: (typeof window !== 'undefined') ? window.__ovoSaveSeq : 0,
+        type: 'full',
+        reason: _ovoNormalizeSaveReason(reason, 'saveData'),
+        charactersCount: (db.characters || []).length,
+        groupsCount: (db.groups || []).length,
+        favoritesCount: (db.favorites || []).length,
+        latestPrivate: lastPrivate ? {
+            id: lastPrivate.chat.id,
+            name: lastPrivate.chat.remarkName || lastPrivate.chat.realName || lastPrivate.chat.name || '',
+            historyLength: lastPrivate.chat.history.length,
+            lastMessageId: lastPrivate.last.id,
+            lastMessageRole: lastPrivate.last.role,
+            lastMessageTime: lastPrivate.last.timestamp,
+            lastMessagePreview: typeof lastPrivate.last.content === 'string' ? lastPrivate.last.content.slice(0, 60) : ''
+        } : null,
+        latestGroup: lastGroup ? {
+            id: lastGroup.chat.id,
+            name: lastGroup.chat.name || '',
+            historyLength: lastGroup.chat.history.length,
+            lastMessageId: lastGroup.last.id,
+            lastMessageRole: lastGroup.last.role,
+            lastMessageTime: lastGroup.last.timestamp,
+            lastMessagePreview: typeof lastGroup.last.content === 'string' ? lastGroup.last.content.slice(0, 60) : ''
+        } : null,
+        activeChat: _ovoGetActiveChatAuditMeta(),
+        stack: _ovoGetSaveAuditStack(),
+        at: new Date().toISOString()
+    };
+}
+
+
 // 数据保存与加载
 let _ovoDbLoading = false;
 let _ovoDbReady = false;
@@ -1011,39 +1885,49 @@ async function _ovoWaitForDbReady(maxWaitMs = 2500) {
     return !_ovoDbLoading;
 }
 
-const saveData = async () => {
-    await _ovoWaitForDbReady();
-    // iOS/Safari IndexedDB 偶发对 bulkPut 报 Failed to delete record from object store。
-    // 改为逐条 put，牺牲一点速度，换稳定性；不改变数据结构。
-    try {
-        await dexieDB.transaction('rw', dexieDB.tables, async () => {
-            for (const character of (db.characters || [])) {
-                if (character && character.id) await dexieDB.characters.put(character);
-            }
-            for (const group of (db.groups || [])) {
-                if (group && group.id) await dexieDB.groups.put(group);
-            }
-            for (const worldBook of (db.worldBooks || [])) {
-                if (worldBook && worldBook.id) await dexieDB.worldBooks.put(worldBook);
-            }
-            for (const sticker of (db.myStickers || [])) {
-                if (sticker && sticker.id) await dexieDB.myStickers.put(sticker);
-            }
-            if (dexieDB.archives) {
-                for (const archive of (db.archives || [])) {
-                    if (archive && archive.id) await dexieDB.archives.put(archive);
-                }
-            }
+const saveData = async (reason = 'saveData') => {
+    const audit = _ovoBuildFullSaveAuditPayload(reason);
+    _ovoLogSaveAudit('[SAVE-DATA-BEFORE]', audit);
 
-            for (const key of globalSettingKeys) {
-                if (db[key] !== undefined) {
-                    await dexieDB.globalSettings.put({ key: key, value: db[key] });
-                }
+    const emergencySnapshotResult = await _ovoWriteGlobalEmergencySnapshot('saveData');
+    await _ovoWaitForDbReady();
+
+    // WOW v55.9.17：不再把所有表塞进一个超大 IndexedDB transaction。
+    // iOS/Safari 上超大事务容易超时/中止，导致整轮保存回滚到上次成功点。
+    // 这里改成按表、按记录顺序写入多个小事务：慢一点，但不容易被一个大事务整批回滚。
+    try {
+        for (const character of (db.characters || [])) {
+            if (character && character.id) await dexieDB.characters.put(character);
+        }
+        for (const group of (db.groups || [])) {
+            if (group && group.id) await dexieDB.groups.put(group);
+        }
+        for (const worldBook of (db.worldBooks || [])) {
+            if (worldBook && worldBook.id) await dexieDB.worldBooks.put(worldBook);
+        }
+        for (const sticker of (db.myStickers || [])) {
+            if (sticker && sticker.id) await dexieDB.myStickers.put(sticker);
+        }
+        if (dexieDB.archives) {
+            for (const archive of (db.archives || [])) {
+                if (archive && archive.id) await dexieDB.archives.put(archive);
             }
-        });
+        }
+
+        for (const key of globalSettingKeys) {
+            if (db[key] !== undefined) {
+                await dexieDB.globalSettings.put({ key: key, value: db[key] });
+            }
+        }
+
+        _ovoMarkGlobalSnapshotConfirmed(emergencySnapshotResult);
+        _ovoWarnSnapshotFailedButMainSaveSucceeded(emergencySnapshotResult);
+        _ovoLogSaveAudit('[SAVE-DATA-AFTER]', audit);
     } catch (e) {
         _ovoDbLastErrorAt = Date.now();
-        console.error('[OVO保存] 逐条保存失败:', e);
+        console.error('[OVO保存] 分步保存失败:', e);
+        _ovoLogSaveAudit('[SAVE-DATA-FAILED]', audit, e);
+        _ovoShowMainSaveFailureModal(emergencySnapshotResult, e);
         throw e;
     }
 };
@@ -1052,6 +1936,7 @@ const saveData = async () => {
 // 局部保存：设置页/预设页只改 globalSettings 时，不再触发全库逐条写入。
 // 这能避开“点保存设置 = characters/groups/worldBooks/stickers/archives 全扫一遍”的卡顿。
 const saveGlobalSettings = async (keys) => {
+    const emergencySnapshotResult = await _ovoWriteGlobalEmergencySnapshot('saveGlobalSettings');
     await _ovoWaitForDbReady();
     const list = Array.isArray(keys) ? keys : [keys];
     const validKeys = [...new Set(list)].filter(key => globalSettingKeys.includes(key) && db[key] !== undefined);
@@ -1062,9 +1947,12 @@ const saveGlobalSettings = async (keys) => {
                 await dexieDB.globalSettings.put({ key: key, value: db[key] });
             }
         });
+        _ovoMarkGlobalSnapshotConfirmed(emergencySnapshotResult);
+        _ovoWarnSnapshotFailedButMainSaveSucceeded(emergencySnapshotResult);
     } catch (e) {
         _ovoDbLastErrorAt = Date.now();
         console.error('[OVO保存] 局部设置保存失败:', e);
+        _ovoShowMainSaveFailureModal(emergencySnapshotResult, e);
         throw e;
     }
 };
@@ -1080,33 +1968,73 @@ const saveDataQueued = async () => {
 };
 
 
-const saveCharacterData = async (characterOrId) => {
-    await _ovoWaitForDbReady();
+const saveCharacterData = async (characterOrId, reason = 'saveCharacterData') => {
     const character = (typeof characterOrId === 'string')
         ? (db.characters || []).find(c => c && c.id === characterOrId)
         : characterOrId;
     if (!character || !character.id) return;
+
+    const audit = _ovoBuildSaveAuditPayload('character', character, reason);
+    _ovoLogSaveAudit('[SAVE-CHAR-BEFORE]', audit);
+
+    const emergencySnapshotResult = await _ovoWriteGlobalEmergencySnapshot('saveCharacterData');
+    await _ovoWaitForDbReady();
     try {
         await dexieDB.characters.put(character);
+        _ovoMarkGlobalSnapshotConfirmed(emergencySnapshotResult);
+        _ovoWarnSnapshotFailedButMainSaveSucceeded(emergencySnapshotResult);
+        _ovoLogSaveAudit('[SAVE-CHAR-AFTER]', audit);
     } catch (e) {
-        _ovoDbLastErrorAt = Date.now();
-        console.error('[OVO保存] 角色局部保存失败:', e);
-        throw e;
+        console.warn('[OVO保存] 角色保存失败，200ms 后重试:', e);
+        _ovoLogSaveAudit('[SAVE-CHAR-RETRY]', audit, e);
+        await new Promise(r => setTimeout(r, 200));
+        try {
+            await dexieDB.characters.put(character);
+            _ovoMarkGlobalSnapshotConfirmed(emergencySnapshotResult);
+            _ovoWarnSnapshotFailedButMainSaveSucceeded(emergencySnapshotResult);
+            _ovoLogSaveAudit('[SAVE-CHAR-AFTER-RETRY]', audit);
+        } catch (e2) {
+            _ovoDbLastErrorAt = Date.now();
+            console.error('[OVO保存] 角色局部保存失败（重试后）:', e2);
+            _ovoLogSaveAudit('[SAVE-CHAR-FAILED]', audit, e2);
+            _ovoShowMainSaveFailureModal(emergencySnapshotResult, e2);
+            throw e2;
+        }
     }
 };
 
-const saveGroupData = async (groupOrId) => {
-    await _ovoWaitForDbReady();
+const saveGroupData = async (groupOrId, reason = 'saveGroupData') => {
     const group = (typeof groupOrId === 'string')
         ? (db.groups || []).find(g => g && g.id === groupOrId)
         : groupOrId;
     if (!group || !group.id) return;
+
+    const audit = _ovoBuildSaveAuditPayload('group', group, reason);
+    _ovoLogSaveAudit('[SAVE-GROUP-BEFORE]', audit);
+
+    const emergencySnapshotResult = await _ovoWriteGlobalEmergencySnapshot('saveGroupData');
+    await _ovoWaitForDbReady();
     try {
         await dexieDB.groups.put(group);
+        _ovoMarkGlobalSnapshotConfirmed(emergencySnapshotResult);
+        _ovoWarnSnapshotFailedButMainSaveSucceeded(emergencySnapshotResult);
+        _ovoLogSaveAudit('[SAVE-GROUP-AFTER]', audit);
     } catch (e) {
-        _ovoDbLastErrorAt = Date.now();
-        console.error('[OVO保存] 群聊局部保存失败:', e);
-        throw e;
+        console.warn('[OVO保存] 群聊保存失败，200ms 后重试:', e);
+        _ovoLogSaveAudit('[SAVE-GROUP-RETRY]', audit, e);
+        await new Promise(r => setTimeout(r, 200));
+        try {
+            await dexieDB.groups.put(group);
+            _ovoMarkGlobalSnapshotConfirmed(emergencySnapshotResult);
+            _ovoWarnSnapshotFailedButMainSaveSucceeded(emergencySnapshotResult);
+            _ovoLogSaveAudit('[SAVE-GROUP-AFTER-RETRY]', audit);
+        } catch (e2) {
+            _ovoDbLastErrorAt = Date.now();
+            console.error('[OVO保存] 群聊局部保存失败（重试后）:', e2);
+            _ovoLogSaveAudit('[SAVE-GROUP-FAILED]', audit, e2);
+            _ovoShowMainSaveFailureModal(emergencySnapshotResult, e2);
+            throw e2;
+        }
     }
 };
 
@@ -1287,6 +2215,11 @@ const loadData = async () => {
         if (c.canBlockUser === undefined) c.canBlockUser = true;
         // 角色掌控模式：允许角色查看并操控用户手机
         if (c.characterRemarkAwareEnabled === undefined) c.characterRemarkAwareEnabled = false;
+        if (c.myNickname === undefined) c.myNickname = '';
+        if (c.characterCanChangeUserNickname === undefined) c.characterCanChangeUserNickname = false;
+        if (c.musicControlEnabled === undefined) c.musicControlEnabled = false;
+        if (c.pendingUserNicknameChange === undefined) delete c.pendingUserNicknameChange;
+        if (c.pendingMusicControlEvent === undefined) delete c.pendingMusicControlEvent;
         if (c.characterFavoriteAwareEnabled === undefined) c.characterFavoriteAwareEnabled = false;
         if (c.characterUserFavoriteAwareEnabled === undefined) c.characterUserFavoriteAwareEnabled = false;
         if (c.characterPeriodAwareEnabled === undefined) c.characterPeriodAwareEnabled = false;
@@ -1295,6 +2228,8 @@ const loadData = async () => {
         if (c.favoriteMemoryUserOwnEnabled === undefined) c.favoriteMemoryUserOwnEnabled = false;
         if (c.favoriteMemoryUserAllEnabled === undefined) c.favoriteMemoryUserAllEnabled = false;
         if (c.favoriteMemoryLimit === undefined) c.favoriteMemoryLimit = 0;
+        if (c.selfToggleSettingsEnabled === undefined) c.selfToggleSettingsEnabled = false;
+        if (!Array.isArray(c.pendingSettingControlEvents)) c.pendingSettingControlEvents = [];
         if (c.phoneControlEnabled === undefined) c.phoneControlEnabled = false;
         if (c.phoneControlViewLimit === undefined) c.phoneControlViewLimit = 10;
         if (!Array.isArray(c.phoneControlHistory)) c.phoneControlHistory = [];
@@ -1390,6 +2325,7 @@ const loadData = async () => {
         }
     }
     _ovoDbReady = true;
+    _ovoCheckGlobalEmergencySnapshotAfterLoad();
     } catch (e) {
         _ovoDbLastErrorAt = Date.now();
         console.error('[OVO加载] 数据库加载失败:', e);

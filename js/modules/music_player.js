@@ -22,6 +22,9 @@
     /** @type {'single'|'order'|'shuffle'} 播放模式：单曲循环/顺序播放/随机播放 */
     let playMode = 'single';
     const STORAGE_KEY_PLAY_MODE = 'music_player_play_mode';
+    // WOW v57.5.1：音乐 pending 的合并保存计时器只放在模块内存里，避免 _musicControlSaveTimer 混入角色数据/IndexedDB。
+    const musicControlSaveTimers = new Map();
+
 
     function loadPlaylistSongs() {
         try {
@@ -45,6 +48,66 @@
     }
     function getSongsInCategory(songs, categoryId) {
         return songs.filter(s => s.categoryId === categoryId);
+    }
+
+    function getCurrentSongInfo() {
+        const songs = loadPlaylistSongs();
+        const song = songs.find(s => s.id === currentPlayingSongId);
+        const titleEl = getEl('music-title');
+        const title = (song && song.title) || (titleEl && titleEl.textContent) || '';
+        return {
+            id: currentPlayingSongId || '',
+            title: title || '未选择音频',
+            categoryId: currentPlayingCategoryId || 'default',
+            playMode: playMode || 'single',
+            playModeLabel: getPlayModeLabel(),
+            isPlaying: !!(audio && audio.src && !audio.paused),
+            hasSource: !!(audio && audio.src),
+            src: (song && song.src) || currentSrc || ''
+        };
+    }
+
+    function _ovoRecordUserMusicControlEvent(type) {
+        try {
+            if (typeof currentChatType === 'undefined' || currentChatType !== 'private') return;
+            if (typeof currentChatId === 'undefined' || !currentChatId) return;
+            if (typeof db === 'undefined' || !db || !Array.isArray(db.characters)) return;
+            const chat = db.characters.find(c => c && c.id === currentChatId);
+            if (!chat || !chat.musicControlEnabled) return;
+            const info = getCurrentSongInfo();
+            const seq = (chat._musicControlEventSeq || 0) + 1;
+            chat._musicControlEventSeq = seq;
+            chat.pendingMusicControlEvent = {
+                type: type,
+                songId: info.id || '',
+                songTitle: info.title || '',
+                playMode: info.playMode || '',
+                playModeLabel: info.playModeLabel || '',
+                isPlaying: !!info.isPlaying,
+                at: Date.now(),
+                seq: seq
+            };
+
+            // WOW v57.5：连续切歌只保留最后一次。保存也做短延迟合并，避免 B、C 连续写库时旧保存迟到。
+            // WOW v57.5.1：计时器不再挂到 chat 对象，避免内部临时字段被 saveCharacterData 写进 IndexedDB。
+            const timerKey = chat.id || currentChatId;
+            if (musicControlSaveTimers.has(timerKey)) {
+                clearTimeout(musicControlSaveTimers.get(timerKey));
+            }
+            const timerId = setTimeout(function () {
+                musicControlSaveTimers.delete(timerKey);
+                if (typeof saveCharacterData === 'function') {
+                    // 兼容旧测试包：如果之前残留过这个字段，保存前顺手清掉。
+                    delete chat._musicControlSaveTimer;
+                    saveCharacterData(chat, 'user-music-control-latest').catch(function(e) {
+                        console.warn('[MusicControl] 保存用户音乐操作感知失败:', e);
+                    });
+                }
+            }, 160);
+            musicControlSaveTimers.set(timerKey, timerId);
+        } catch (e) {
+            console.warn('[MusicControl] 记录用户音乐操作失败:', e);
+        }
     }
 
     // ---------- 在线搜索（Meting / Vkeys API） ----------
@@ -197,8 +260,14 @@
             audio.addEventListener('timeupdate', onTimeUpdate);
             audio.addEventListener('loadedmetadata', onLoadedMetadata);
             audio.addEventListener('ended', onEnded);
-            audio.addEventListener('play', () => updatePlayPauseUI(true));
-            audio.addEventListener('pause', () => updatePlayPauseUI(false));
+            audio.addEventListener('play', () => {
+                updatePlayPauseUI(true);
+                updateChatMusicFloat();
+            });
+            audio.addEventListener('pause', () => {
+                updatePlayPauseUI(false);
+                updateChatMusicFloat();
+            });
         }
         return audio;
     }
@@ -305,6 +374,7 @@
             saveLrcToStorage();
             renderVinylLyrics();
         }
+        updateChatMusicFloat();
     }
 
     /** 添加一首歌到播放列表并返回带 id 的项 */
@@ -392,6 +462,341 @@
         } catch (_) {
             return '';
         }
+    }
+
+
+    // ---------- 聊天页悬浮迷你播放器 ----------
+    function setupChatMusicFloat() {
+        try {
+            if (document.getElementById('chat-music-float')) return;
+            const chatScreen = document.getElementById('chat-room-screen');
+            if (!chatScreen) return;
+            const wrap = document.createElement('div');
+            wrap.id = 'chat-music-float';
+            wrap.className = 'chat-music-float collapsed';
+            wrap.innerHTML = `
+                <button type="button" class="chat-music-float-toggle" id="chat-music-float-toggle" title="一起听歌">🎧</button>
+                <div class="chat-music-float-panel" id="chat-music-float-panel">
+                    <button type="button" class="chat-music-float-close" id="chat-music-float-close" title="收起">×</button>
+                    <button type="button" class="chat-music-float-icon-hide" id="chat-music-float-icon-hide" title="隐藏图标">隐藏</button>
+                    <div class="chat-music-float-info" id="chat-music-float-info">
+                        <span class="chat-music-float-note">♪</span>
+                        <span class="chat-music-float-title" id="chat-music-float-title">未选择音频</span>
+                    </div>
+                    <div class="chat-music-float-actions">
+                        <button type="button" class="chat-music-float-btn" id="chat-music-float-prev" title="上一首">⏮</button>
+                        <button type="button" class="chat-music-float-btn chat-music-float-play" id="chat-music-float-play" title="播放/暂停">▶</button>
+                        <button type="button" class="chat-music-float-btn" id="chat-music-float-next" title="下一首">⏭</button>
+                        <button type="button" class="chat-music-float-btn" id="chat-music-float-open" title="打开音乐">↗</button>
+                    </div>
+                </div>`;
+            // WOW v57.6.4：悬浮音乐控件挂到 body 顶层，避免被聊天主题/背景装饰层遮住或拦截点击。
+            wrap.classList.add('body-level');
+            document.body.appendChild(wrap);
+
+            const toggle = document.getElementById('chat-music-float-toggle');
+            const close = document.getElementById('chat-music-float-close');
+            const hideIcon = document.getElementById('chat-music-float-icon-hide');
+            const prev = document.getElementById('chat-music-float-prev');
+            const play = document.getElementById('chat-music-float-play');
+            const next = document.getElementById('chat-music-float-next');
+            const open = document.getElementById('chat-music-float-open');
+
+            const FLOAT_POS_KEY = 'ovo_chat_music_float_pos_v1';
+            const FLOAT_HIDDEN_KEY = 'ovo_chat_music_float_hidden_v1';
+            let didDragFloat = false;
+
+            function getFloatBounds() {
+                if (wrap.classList.contains('body-level')) {
+                    return { left: 0, top: 0, width: window.innerWidth || document.documentElement.clientWidth || 390, height: window.innerHeight || document.documentElement.clientHeight || 780 };
+                }
+                return chatScreen.getBoundingClientRect();
+            }
+
+            function clampFloatPosition(x, y) {
+                const rect = wrap.getBoundingClientRect();
+                const screenRect = getFloatBounds();
+                const w = rect.width || 44;
+                const h = rect.height || 44;
+                const minX = 6;
+                const minY = 56;
+                const maxX = Math.max(minX, screenRect.width - w - 6);
+                const maxY = Math.max(minY, screenRect.height - h - 76);
+                return {
+                    x: Math.min(maxX, Math.max(minX, x)),
+                    y: Math.min(maxY, Math.max(minY, y))
+                };
+            }
+
+            function applyFloatPosition(pos) {
+                if (!pos) return;
+                const p = clampFloatPosition(Number(pos.x) || 0, Number(pos.y) || 0);
+                wrap.style.left = p.x + 'px';
+                wrap.style.top = p.y + 'px';
+                wrap.style.right = 'auto';
+                wrap.style.bottom = 'auto';
+            }
+
+            function clampCurrentFloatPosition() {
+                const rect = wrap.getBoundingClientRect();
+                const screenRect = getFloatBounds();
+                const p = clampFloatPosition(rect.left - screenRect.left, rect.top - screenRect.top);
+                wrap.style.left = p.x + 'px';
+                wrap.style.top = p.y + 'px';
+                wrap.style.right = 'auto';
+                wrap.style.bottom = 'auto';
+                return p;
+            }
+
+            function loadFloatPosition() {
+                try {
+                    const raw = localStorage.getItem(FLOAT_POS_KEY);
+                    if (!raw) return;
+                    applyFloatPosition(JSON.parse(raw));
+                } catch (_) {}
+            }
+
+            function updateFloatToggleIcon() {
+                if (!toggle) return;
+                if (wrap.classList.contains('icon-hidden')) {
+                    toggle.textContent = '•';
+                    toggle.title = '显示一起听歌';
+                    toggle.setAttribute('aria-label', '显示一起听歌');
+                } else {
+                    toggle.textContent = '🎧';
+                    toggle.title = '一起听歌';
+                    toggle.setAttribute('aria-label', '一起听歌');
+                }
+            }
+
+            function loadFloatHiddenState() {
+                try {
+                    // WOW v57.6.2：旧版完全隐形热区太容易找不到。升级后先强制恢复显示一次。
+                    if (localStorage.getItem('ovo_chat_music_float_hidden_upgrade_v5762') !== '1') {
+                        localStorage.setItem(FLOAT_HIDDEN_KEY, '0');
+                        localStorage.setItem('ovo_chat_music_float_hidden_upgrade_v5762', '1');
+                    }
+                    if (localStorage.getItem(FLOAT_HIDDEN_KEY) === '1') {
+                        wrap.classList.add('icon-hidden');
+                    } else {
+                        wrap.classList.remove('icon-hidden');
+                    }
+                } catch (_) {}
+                updateFloatToggleIcon();
+            }
+
+            function setFloatIconHidden(hidden) {
+                wrap.classList.toggle('icon-hidden', !!hidden);
+                updateFloatToggleIcon();
+                try { localStorage.setItem(FLOAT_HIDDEN_KEY, hidden ? '1' : '0'); } catch (_) {}
+            }
+
+            function saveFloatPosition() {
+                try {
+                    const rect = wrap.getBoundingClientRect();
+                    const screenRect = getFloatBounds();
+                    localStorage.setItem(FLOAT_POS_KEY, JSON.stringify({
+                        x: Math.round(rect.left - screenRect.left),
+                        y: Math.round(rect.top - screenRect.top)
+                    }));
+                } catch (_) {}
+            }
+
+            function enableFloatDrag(handle, options) {
+                if (!handle || !window.PointerEvent) return;
+                const opts = options || {};
+                let dragging = false;
+                let startX = 0;
+                let startY = 0;
+                let baseX = 0;
+                let baseY = 0;
+
+                handle.addEventListener('pointerdown', function (ev) {
+                    if (ev.button !== undefined && ev.button !== 0) return;
+                    if (opts.ignoreInteractive !== false) {
+                        const target = ev.target;
+                        if (target && target.closest && target.closest('button, input, textarea, select, a, .chat-music-float-actions')) {
+                            return;
+                        }
+                    }
+                    dragging = true;
+                    didDragFloat = false;
+                    const rect = wrap.getBoundingClientRect();
+                    const screenRect = getFloatBounds();
+                    startX = ev.clientX;
+                    startY = ev.clientY;
+                    baseX = rect.left - screenRect.left;
+                    baseY = rect.top - screenRect.top;
+                    wrap.classList.add('dragging');
+                    try { handle.setPointerCapture(ev.pointerId); } catch (_) {}
+                });
+
+                handle.addEventListener('pointermove', function (ev) {
+                    if (!dragging) return;
+                    const dx = ev.clientX - startX;
+                    const dy = ev.clientY - startY;
+                    if (Math.abs(dx) + Math.abs(dy) > 5) didDragFloat = true;
+                    const p = clampFloatPosition(baseX + dx, baseY + dy);
+                    wrap.style.left = p.x + 'px';
+                    wrap.style.top = p.y + 'px';
+                    wrap.style.right = 'auto';
+                    wrap.style.bottom = 'auto';
+                });
+
+                function endDrag(ev) {
+                    if (!dragging) return;
+                    dragging = false;
+                    wrap.classList.remove('dragging');
+                    try { handle.releasePointerCapture(ev.pointerId); } catch (_) {}
+                    if (didDragFloat) {
+                        saveFloatPosition();
+                        setTimeout(function () { didDragFloat = false; }, 0);
+                    }
+                }
+
+                handle.addEventListener('pointerup', endDrag);
+                handle.addEventListener('pointercancel', endDrag);
+            }
+
+            function syncFloatVisibility() {
+                const isChatActive = chatScreen.classList.contains('active');
+                wrap.style.display = isChatActive ? '' : 'none';
+                if (isChatActive) {
+                    requestAnimationFrame(function () {
+                        clampCurrentFloatPosition();
+                    });
+                }
+            }
+
+            loadFloatPosition();
+            loadFloatHiddenState();
+            syncFloatVisibility();
+            try {
+                new MutationObserver(syncFloatVisibility).observe(chatScreen, { attributes: true, attributeFilter: ['class'] });
+                window.addEventListener('resize', function () {
+                    requestAnimationFrame(function () {
+                        if (chatScreen.classList.contains('active')) {
+                            clampCurrentFloatPosition();
+                            saveFloatPosition();
+                        }
+                    });
+                });
+            } catch (_) {}
+
+            function expand() {
+                wrap.classList.remove('collapsed');
+                wrap.classList.add('expanded');
+                updateChatMusicFloat();
+                requestAnimationFrame(function () {
+                    clampCurrentFloatPosition();
+                    saveFloatPosition();
+                });
+            }
+            function collapse() {
+                wrap.classList.add('collapsed');
+                wrap.classList.remove('expanded');
+                updateChatMusicFloat();
+                requestAnimationFrame(function () {
+                    clampCurrentFloatPosition();
+                    saveFloatPosition();
+                });
+            }
+
+            if (toggle) {
+                enableFloatDrag(toggle, { ignoreInteractive: false });
+                toggle.addEventListener('click', function () {
+                    if (didDragFloat) return;
+                    if (wrap.classList.contains('icon-hidden')) {
+                        setFloatIconHidden(false);
+                        collapse();
+                        return;
+                    }
+                    expand();
+                });
+            }
+            const panel = document.getElementById('chat-music-float-panel');
+            const info = document.getElementById('chat-music-float-info');
+            enableFloatDrag(info || panel, { ignoreInteractive: true });
+            enableFloatDrag(panel, { ignoreInteractive: true });
+
+            if (close) close.addEventListener('click', collapse);
+            if (hideIcon) hideIcon.addEventListener('click', function () {
+                collapse();
+                setFloatIconHidden(true);
+            });
+            if (prev) prev.addEventListener('click', function () {
+                const res = _ovoMusicPrevByCommand();
+                if (res && res.ok) {
+                    _ovoRecordUserMusicControlEvent('user_prev');
+                } else if (typeof showToast === 'function') {
+                    showToast((res && res.reason) || '不能切到上一首');
+                }
+                updateChatMusicFloat();
+            });
+            if (next) next.addEventListener('click', function () {
+                const res = _ovoMusicNextByCommand();
+                if (res && res.ok) {
+                    _ovoRecordUserMusicControlEvent('user_next');
+                } else if (typeof showToast === 'function') {
+                    showToast((res && res.reason) || '不能切到下一首');
+                }
+                updateChatMusicFloat();
+            });
+            if (play) play.addEventListener('click', async function () {
+                const el = getAudio();
+                if (!el.src) {
+                    if (typeof showToast === 'function') showToast('当前没有歌曲');
+                    updateChatMusicFloat();
+                    return;
+                }
+                if (el.paused) {
+                    try {
+                        await el.play();
+                        _ovoRecordUserMusicControlEvent('user_play');
+                    } catch (e) {
+                        if (typeof showToast === 'function') showToast('浏览器拦截了播放，请进音乐页点一下播放');
+                    }
+                } else {
+                    el.pause();
+                    _ovoRecordUserMusicControlEvent('user_pause');
+                }
+                updateChatMusicFloat();
+            });
+            if (open) open.addEventListener('click', function () {
+                if (typeof switchScreen === 'function') {
+                    switchScreen('music-screen');
+                    setTimeout(function () {
+                        if (typeof onShowMusicScreen === 'function') onShowMusicScreen();
+                    }, 0);
+                }
+            });
+            updateChatMusicFloat();
+        } catch (e) {
+            console.warn('[MusicFloat] 初始化聊天页迷你播放器失败:', e);
+        }
+    }
+
+    function updateChatMusicFloat() {
+        try {
+            const wrap = document.getElementById('chat-music-float');
+            if (!wrap) return;
+            const titleEl = document.getElementById('chat-music-float-title');
+            const playBtn = document.getElementById('chat-music-float-play');
+            const prevBtn = document.getElementById('chat-music-float-prev');
+            const nextBtn = document.getElementById('chat-music-float-next');
+            const state = getCurrentSongInfo();
+            const title = state && state.hasSource ? (state.title || '当前音频') : '未选择音频';
+            if (titleEl) titleEl.textContent = title;
+            if (playBtn) playBtn.textContent = state && state.isPlaying ? '⏸' : '▶';
+            wrap.classList.toggle('is-playing', !!(state && state.isPlaying));
+            wrap.classList.toggle('is-empty', !(state && state.hasSource));
+
+            const songs = loadPlaylistSongs();
+            const list = getSongsInCategory(songs, currentPlayingCategoryId);
+            const idx = list.findIndex(function (s) { return s.id === currentPlayingSongId; });
+            if (prevBtn) prevBtn.disabled = idx <= 0;
+            if (nextBtn) nextBtn.disabled = idx < 0 || idx >= list.length - 1;
+        } catch (_) {}
     }
 
     function initMusicPlayer() {
@@ -1139,7 +1544,12 @@
             const el = getAudio();
             if (!el.src) return;
             userHasInteracted = true;
-            if (el.paused) el.play(); else el.pause();
+            if (el.paused) {
+                el.play().then(function () { _ovoRecordUserMusicControlEvent('user_play'); }).catch(function () {});
+            } else {
+                el.pause();
+                _ovoRecordUserMusicControlEvent('user_pause');
+            }
         });
 
         // 播放模式：恢复上次保存的模式
@@ -1195,13 +1605,16 @@
                 setSource(next.src, next.title, { id: next.id, lrc: next.lrc, cover: next.cover });
                 updatePrevNextState();
                 getAudio().play().catch(function () {});
+                return getCurrentSongInfo();
             } else if (list.length > 0) {
                 var first = list[0];
                 currentPlayingSongId = first.id;
                 setSource(first.src, first.title, { id: first.id, lrc: first.lrc, cover: first.cover });
                 updatePrevNextState();
                 getAudio().play().catch(function () {});
+                return getCurrentSongInfo();
             }
+            return getCurrentSongInfo();
         }
 
         function playRandomSongAuto() {
@@ -1221,21 +1634,24 @@
             setSource(song.src, song.title, { id: song.id, lrc: song.lrc, cover: song.cover });
             updatePrevNextState();
             getAudio().play().catch(function () {});
+            return getCurrentSongInfo();
         }
 
         window._musicPlayNext = playNextSongAuto;
         window._musicPlayRandom = playRandomSongAuto;
 
-        function playSongAt(categoryId, indexInCategory) {
+        function playSongAt(categoryId, indexInCategory, userEventType) {
             const songs = loadPlaylistSongs();
             const list = getSongsInCategory(songs, categoryId);
             const song = list[indexInCategory];
-            if (!song) return;
+            if (!song) return null;
             currentPlayingSongId = song.id;
             currentPlayingCategoryId = categoryId;
             setSource(song.src, song.title, { id: song.id, lrc: song.lrc, cover: song.cover });
             updatePrevNextState();
             playFromUserGesture();
+            if (userEventType) _ovoRecordUserMusicControlEvent(userEventType);
+            return getCurrentSongInfo();
         }
 
         const btnPrev = getEl('music-btn-prev');
@@ -1245,7 +1661,7 @@
                 const songs = loadPlaylistSongs();
                 const list = getSongsInCategory(songs, currentPlayingCategoryId);
                 const idx = list.findIndex(s => s.id === currentPlayingSongId);
-                if (idx > 0) playSongAt(currentPlayingCategoryId, idx - 1);
+                if (idx > 0) playSongAt(currentPlayingCategoryId, idx - 1, 'user_prev');
             });
         }
         if (btnNext) {
@@ -1253,7 +1669,7 @@
                 const songs = loadPlaylistSongs();
                 const list = getSongsInCategory(songs, currentPlayingCategoryId);
                 const idx = list.findIndex(s => s.id === currentPlayingSongId);
-                if (idx >= 0 && idx < list.length - 1) playSongAt(currentPlayingCategoryId, idx + 1);
+                if (idx >= 0 && idx < list.length - 1) playSongAt(currentPlayingCategoryId, idx + 1, 'user_next');
             });
         }
         updatePrevNextState();
@@ -1414,7 +1830,7 @@
                             const s = list.find(x => x.id === id);
                             if (s) {
                                 const idx = list.indexOf(s);
-                                playSongAt(currentViewCategoryId, idx);
+                                playSongAt(currentViewCategoryId, idx, 'user_select');
                                 closeQueuePanel();
                             }
                         }
@@ -1735,6 +2151,76 @@
         }
     }
 
+    function _ovoPlaySongByCommand(song, categoryId) {
+        if (!song) return getCurrentSongInfo();
+        currentPlayingSongId = song.id;
+        currentPlayingCategoryId = categoryId || song.categoryId || currentPlayingCategoryId || 'default';
+        setSource(song.src, song.title, { id: song.id, lrc: song.lrc, cover: song.cover });
+        getAudio().play().catch(function () {});
+        return getCurrentSongInfo();
+    }
+
+    function _ovoMusicPrevByCommand() {
+        const songs = loadPlaylistSongs();
+        const list = getSongsInCategory(songs, currentPlayingCategoryId);
+        const idx = list.findIndex(s => s.id === currentPlayingSongId);
+        if (idx > 0) {
+            return { ok: true, state: _ovoPlaySongByCommand(list[idx - 1], currentPlayingCategoryId) };
+        }
+        return { ok: false, reason: '已经是第一首', state: getCurrentSongInfo() };
+    }
+
+    function _ovoMusicNextByCommand() {
+        const songs = loadPlaylistSongs();
+        let list = getSongsInCategory(songs, currentPlayingCategoryId);
+        if (!list.length && songs.length) {
+            currentPlayingCategoryId = songs[0].categoryId || 'default';
+            list = getSongsInCategory(songs, currentPlayingCategoryId);
+        }
+        const idx = list.findIndex(s => s.id === currentPlayingSongId);
+        if (idx >= 0 && idx < list.length - 1) {
+            return { ok: true, state: _ovoPlaySongByCommand(list[idx + 1], currentPlayingCategoryId), changed: true };
+        }
+        if (list.length > 0) {
+            return { ok: true, state: _ovoPlaySongByCommand(list[0], currentPlayingCategoryId), changed: idx !== 0 };
+        }
+        const state = getCurrentSongInfo();
+        if (!state.hasSource) return { ok: false, reason: '当前没有歌曲', state: state };
+        return { ok: false, reason: '已经是最后一首', state: state };
+    }
+
+    function _ovoMusicPauseByCommand() {
+        const el = getAudio();
+        if (!el.src) return { ok: false, reason: '当前没有歌曲', state: getCurrentSongInfo() };
+        el.pause();
+        return { ok: true, state: getCurrentSongInfo() };
+    }
+
+    async function _ovoMusicPlayByCommand() {
+        const el = getAudio();
+        if (!el.src) return { ok: false, reason: '当前没有歌曲', state: getCurrentSongInfo() };
+        try {
+            await el.play();
+            return { ok: true, state: getCurrentSongInfo() };
+        } catch (e) {
+            return {
+                ok: false,
+                reason: '浏览器拦截了自动播放，请你手动点一下播放',
+                state: getCurrentSongInfo(),
+                error: e && (e.name || e.message) ? (e.name || e.message) : String(e || '')
+            };
+        }
+    }
+
+    window.OVOMusicControl = {
+        getState: getCurrentSongInfo,
+        next: _ovoMusicNextByCommand,
+        prev: _ovoMusicPrevByCommand,
+        pause: _ovoMusicPauseByCommand,
+        play: _ovoMusicPlayByCommand,
+        updateFloat: updateChatMusicFloat
+    };
+
     window.initMusicPlayer = initMusicPlayer;
     window.onShowMusicScreen = onShowMusicScreen;
     window.resumeMusicPlayback = resumeMusicIfPaused;
@@ -1743,6 +2229,7 @@
     function startKeepAliveOnLoad() {
         initMusicPlayer();
         onShowMusicScreen();
+        setupChatMusicFloat();
     }
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', startKeepAliveOnLoad);

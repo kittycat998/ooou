@@ -570,15 +570,54 @@ function executePhoneControlCommands(text, controllingChar) {
         const pushHistory = (type, actionName, target, detail) => {
             if (!Array.isArray(controllingChar.phoneControlHistory)) controllingChar.phoneControlHistory = [];
             controllingChar.phoneControlHistory.push({ type, action: actionName, target: target || undefined, detail: detail || undefined, timestamp: Date.now() });
-            if (typeof saveData === 'function') saveData();
+            // 不在 AI 回复处理中途保存，避免旧 history 抢写覆盖新消息；本轮末尾统一 saveData。
             executed = true;
         };
 
         const { characters: visibleChars, groups: visibleGroups } = getPhoneControlVisibleChats(controllingChar);
+
+        // phone-control 目标名宽松匹配：保留原指令格式，只提高找人成功率。
+        // 优先精确匹配，其次忽略空白/引号/括号类装饰，最后允许唯一包含匹配。
+        const normalizePhoneTargetName = (value) => String(value || '')
+            .trim()
+            .replace(/^["'“”‘’「」『』【】\[\]\s]+|["'“”‘’「」『』【】\[\]\s]+$/g, '')
+            .replace(/[\s\u200b\u200c\u200d\uFEFF]+/g, '')
+            .replace(/[「」『』“”‘’"'【】\[\]（）()]/g, '');
+
+        const pickUniquePhoneTarget = (items, target, nameGetter) => {
+            const rawTarget = String(target || '').trim();
+            const normalizedTarget = normalizePhoneTargetName(rawTarget);
+            if (!normalizedTarget) return null;
+
+            const exact = items.find(item => (nameGetter(item) || []).some(name => String(name || '').trim() === rawTarget));
+            if (exact) return exact;
+
+            const normalizedExact = items.find(item => (nameGetter(item) || []).some(name => normalizePhoneTargetName(name) === normalizedTarget));
+            if (normalizedExact) return normalizedExact;
+
+            const contains = items.filter(item => (nameGetter(item) || []).some(name => {
+                const normalizedName = normalizePhoneTargetName(name);
+                return normalizedName && (normalizedName.includes(normalizedTarget) || normalizedTarget.includes(normalizedName));
+            }));
+            return contains.length === 1 ? contains[0] : null;
+        };
+
+        const findVisibleCharacterByTarget = (target) => pickUniquePhoneTarget(
+            visibleChars,
+            target,
+            x => [x.remarkName, x.realName, x.name].filter(Boolean)
+        );
+
+        const findVisibleGroupByTarget = (target) => pickUniquePhoneTarget(
+            visibleGroups,
+            target,
+            x => [x.name].filter(Boolean)
+        );
+
         const findTargetChat = () => {
-            const c = visibleChars.find(x => x.remarkName === targetName || x.realName === targetName);
+            const c = findVisibleCharacterByTarget(targetName);
             if (c) return { chat: c, chatId: c.id, chatType: 'private', name: c.remarkName || c.realName };
-            const g = visibleGroups.find(x => x.name === targetName);
+            const g = findVisibleGroupByTarget(targetName);
             if (g) return { chat: g, chatId: g.id, chatType: 'group', name: g.name };
             return null;
         };
@@ -643,29 +682,38 @@ function executePhoneControlCommands(text, controllingChar) {
                         });
                     });
                     pushHistory('action', 'send-message', targetName, count > 1 ? count + '条' : toSend[0].slice(0, 50));
-                    if (typeof saveData === 'function') saveData();
+                    // 不在 AI 回复处理中途保存，避免旧 history 抢写覆盖新消息；本轮末尾统一 saveData。
                 }
             }
             toRemove.push(match[0]);
         } else if (action === 'delete-character' && targetName) {
-            const c = visibleChars.find(x => x.remarkName === targetName || x.realName === targetName);
+            const c = findVisibleCharacterByTarget(targetName);
             if (c) {
                 if (!Array.isArray(db.phoneControlRecycleBin)) db.phoneControlRecycleBin = [];
                 db.phoneControlRecycleBin.push({ ...c, recycledAt: Date.now(), recycledByCharId: controllingChar.id });
                 db.characters = db.characters.filter(x => x.id !== c.id);
+
+                // 逐条 put 的 saveData 不会自动删除已从数组移除的角色。
+                // 这里只删除 IndexedDB 里的这一条角色记录，不做全量 saveData，避免旧 history 抢写。
+                if (typeof dexieDB !== 'undefined' && dexieDB.characters && c.id) {
+                    dexieDB.characters.delete(c.id).catch(err => {
+                        console.warn('[phone-control] 删除角色 IndexedDB 记录失败:', err);
+                    });
+                }
+
                 pushHistory('action', 'delete-character', targetName, '已移入回收站');
-                if (typeof saveData === 'function') saveData();
+                // 不在 AI 回复处理中途保存，避免旧 history 抢写覆盖新消息；本轮末尾统一 saveData。
                 if (typeof renderChatList === 'function') renderChatList();
             }
             toRemove.push(match[0]);
         } else if (action === 'toggle-setting' && targetName && params.setting) {
-            const c = visibleChars.find(x => x.remarkName === targetName || x.realName === targetName);
+            const c = findVisibleCharacterByTarget(targetName);
             if (c) {
                 const key = params.setting;
                 const val = (params.value || '').toLowerCase() === 'on' || (params.value || '').toLowerCase() === 'true';
                 if (key === 'videocallenabled' || key === 'videoCallEnabled') { c.videoCallEnabled = val; pushHistory('action', 'toggle-setting', targetName, 'videoCallEnabled=' + val); }
                 else if (key === 'canblockuser' || key === 'canBlockUser') { c.canBlockUser = val; pushHistory('action', 'toggle-setting', targetName, 'canBlockUser=' + val); }
-                if (typeof saveData === 'function') saveData();
+                // 不在 AI 回复处理中途保存，避免旧 history 抢写覆盖新消息；本轮末尾统一 saveData。
             }
             toRemove.push(match[0]);
         } else if (action === 'clear-history' && targetName) {
@@ -685,7 +733,7 @@ function executePhoneControlCommands(text, controllingChar) {
                 found.chat.blockedByCharAt = null;
                 found.chat.blockedByCharReason = null;
                 pushHistory('action', 'clear-history', targetName, '清空' + count + '条');
-                if (typeof saveData === 'function') saveData();
+                // 不在 AI 回复处理中途保存，避免旧 history 抢写覆盖新消息；本轮末尾统一 saveData。
                 if (typeof renderChatList === 'function') renderChatList();
             }
             toRemove.push(match[0]);
@@ -694,6 +742,99 @@ function executePhoneControlCommands(text, controllingChar) {
     let cleaned = text;
     toRemove.forEach(s => { cleaned = cleaned.replace(s, ''); });
     cleaned = cleaned.replace(/\n{2,}/g, '\n').trim();
+    return { cleaned, executed };
+}
+
+
+function _ovoFormatMusicStateForDisplay(state) {
+    if (!state) return '当前音乐';
+    return state.title || '当前音乐';
+}
+
+function _ovoGetMusicStateForPrompt() {
+    try {
+        if (typeof window !== 'undefined' && window.OVOMusicControl && typeof window.OVOMusicControl.getState === 'function') {
+            return window.OVOMusicControl.getState();
+        }
+    } catch (_) {}
+    return null;
+}
+
+async function executeMusicControlCommands(responseText, chat, targetChatId, targetChatType) {
+    if (targetChatType !== 'private' || !chat || !chat.musicControlEnabled || !responseText) {
+        return { cleaned: responseText, executed: false };
+    }
+
+    const regex = /\[(MUSIC_NEXT|MUSIC_PREV|MUSIC_PAUSE|MUSIC_PLAY)\]/g;
+    let cleaned = responseText;
+    const commands = [];
+    let match;
+    while ((match = regex.exec(responseText)) !== null) {
+        commands.push(match[1]);
+        if (commands.length >= 2) break;
+    }
+
+    cleaned = cleaned.replace(regex, '').replace(/\n{3,}/g, '\n\n').trim();
+
+    if (!commands.length) {
+        return { cleaned, executed: false };
+    }
+
+    if (typeof window !== 'undefined' && typeof window.initMusicPlayer === 'function') {
+        try { window.initMusicPlayer(); } catch (_) {}
+    }
+
+    const control = (typeof window !== 'undefined') ? window.OVOMusicControl : null;
+    if (!control) {
+        return { cleaned, executed: false };
+    }
+
+    const character = db.characters.find(c => c.id === targetChatId);
+    if (!character) {
+        return { cleaned, executed: false };
+    }
+
+    const displayName = character.remarkName || character.realName || character.name || '角色';
+    let executed = false;
+
+    for (const cmd of commands) {
+        let result = null;
+        let displayText = '';
+
+        if (cmd === 'MUSIC_NEXT' && typeof control.next === 'function') {
+            result = await control.next();
+            if (result && result.ok) displayText = `${displayName}切歌：${_ovoFormatMusicStateForDisplay(result.state)}`;
+            else displayText = `${displayName}想切下一首，但${(result && result.reason) || '当前无法切歌'}`;
+        } else if (cmd === 'MUSIC_PREV' && typeof control.prev === 'function') {
+            result = await control.prev();
+            if (result && result.ok) displayText = `${displayName}切歌：${_ovoFormatMusicStateForDisplay(result.state)}`;
+            else displayText = `${displayName}想切上一首，但${(result && result.reason) || '当前无法切歌'}`;
+        } else if (cmd === 'MUSIC_PAUSE' && typeof control.pause === 'function') {
+            result = await control.pause();
+            if (result && result.ok) displayText = `${displayName}暂停了音乐`;
+            else displayText = `${displayName}想暂停音乐，但${(result && result.reason) || '当前没有歌曲'}`;
+        } else if (cmd === 'MUSIC_PLAY' && typeof control.play === 'function') {
+            result = await control.play();
+            if (result && result.ok) displayText = `${displayName}继续播放音乐：《${_ovoFormatMusicStateForDisplay(result.state)}》`;
+            else displayText = `${displayName}想继续播放，但${(result && result.reason) || '当前没有歌曲'}`;
+        }
+
+        if (displayText) {
+            const hiddenMsg = {
+                id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+                role: 'assistant',
+                content: `[system-display:${displayText}]`,
+                timestamp: Date.now(),
+                isContextDisabled: false
+            };
+            if (!Array.isArray(character.history)) character.history = [];
+            character.history.push(hiddenMsg);
+            executed = true;
+        }
+    }
+
+    if (typeof renderChatList === 'function') renderChatList();
+
     return { cleaned, executed };
 }
 
@@ -744,18 +885,67 @@ async function executeChangeRemarkNameCommand(responseText, chat, targetChatId, 
     if (!Array.isArray(character.history)) character.history = [];
     character.history.push(hiddenMsg);
 
-    try {
-        await saveData();
-        if (typeof renderChatList === 'function') renderChatList();
-        const titleEl = document.getElementById('chat-room-title');
-        if (titleEl && currentChatId === targetChatId && currentChatType === 'private') titleEl.textContent = lastName;
-    } catch (e) {
-        console.warn('[ChangeRemark] 保存备注失败:', e);
-    }
+    // WOW v55.9.13：这里不能中途 saveData。
+    // 备注名和 system-display 消息只改当前角色对象，等本轮 AI 回复处理完后由末尾统一 saveData。
+    if (typeof renderChatList === 'function') renderChatList();
+    const titleEl = document.getElementById('chat-room-title');
+    if (titleEl && currentChatId === targetChatId && currentChatType === 'private') titleEl.textContent = lastName;
 
     return { cleaned, executed: true, newName: lastName };
 }
 
+
+
+async function executeChangeUserNicknameCommand(responseText, chat, targetChatId, targetChatType) {
+    if (targetChatType !== 'private' || !chat || !chat.characterCanChangeUserNickname || !responseText) {
+        return { cleaned: responseText, executed: false };
+    }
+
+    const regex = /\[CHANGE_USER_NICKNAME[:：]([^\]]+?)\]/g;
+    let cleaned = responseText;
+    let match;
+    let lastNickname = '';
+
+    while ((match = regex.exec(responseText)) !== null) {
+        const candidate = (match[1] || '').trim();
+        if (candidate && candidate.length <= 16) {
+            lastNickname = candidate;
+        }
+    }
+
+    cleaned = cleaned.replace(regex, '').replace(/\n{3,}/g, '\n\n').trim();
+
+    if (!lastNickname) {
+        return { cleaned, executed: false };
+    }
+
+    const character = db.characters.find(c => c.id === targetChatId);
+    if (!character) {
+        return { cleaned, executed: false };
+    }
+
+    const oldNickname = character.myNickname || '';
+    if (oldNickname === lastNickname) {
+        return { cleaned, executed: false };
+    }
+
+    character.myNickname = lastNickname;
+    character._lastUserNicknameChangedByCharAt = Date.now();
+
+    const hiddenMsg = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        role: 'assistant',
+        content: `[system-display:${character.realName || character.remarkName || '角色'}把你的昵称改为“${lastNickname}”]`,
+        timestamp: Date.now(),
+        isContextDisabled: false
+    };
+    if (!Array.isArray(character.history)) character.history = [];
+    character.history.push(hiddenMsg);
+
+    if (typeof renderChatList === 'function') renderChatList();
+
+    return { cleaned, executed: true, newNickname: lastNickname };
+}
 
 
 async function executeFavoriteReplyNoteCommand(responseText, chat, targetChatId, targetChatType) {
@@ -813,6 +1003,12 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             if (pcResult.executed) fullResponse = pcResult.cleaned;
         }
 
+        // 1.4.6 提取并执行角色自行操作功能开关指令，然后从展示内容中移除
+        if (targetChatType === 'private' && typeof executeSelfToggleSettingCommands === 'function') {
+            const settingToggleResult = await executeSelfToggleSettingCommands(fullResponse, chat);
+            fullResponse = settingToggleResult.cleaned;
+        }
+
         // 1.5 提取并执行角色收藏指令，然后从展示内容中移除
         const favoriteRegex = /\[FAVORITE:(msg_[^\]:]+):([^\]]*)\]/g;
         const favoriteCommands = [];
@@ -821,9 +1017,11 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             favoriteCommands.push({ messageId: match[1], note: (match[2] || '').trim() });
         }
         fullResponse = fullResponse.replace(favoriteRegex, '').replace(/\n{2,}/g, '\n').trim();
+        let favoritesDirty = false;
         if (targetChatType === 'private' && chat.characterAutoFavoriteEnabled && typeof addCharacterFavorite === 'function') {
             favoriteCommands.forEach(function(cmd) {
-                addCharacterFavorite(cmd.messageId, targetChatId, cmd.note);
+                const favResult = addCharacterFavorite(cmd.messageId, targetChatId, cmd.note, { deferSave: true });
+                if (favResult) favoritesDirty = true;
             });
         }
 
@@ -832,17 +1030,26 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             const avatarResult = window.AvatarSystem.parseAvatarCommands(fullResponse, targetChatId);
             fullResponse = avatarResult.cleaned;
             if (avatarResult.actions.length > 0) {
-                window.AvatarSystem.executeAvatarActions(avatarResult.actions, targetChatId);
+                window.AvatarSystem.executeAvatarActions(avatarResult.actions, targetChatId, { deferSave: true });
             }
         }
+
+        // 1.6.5 一起听歌：识别 [MUSIC_NEXT]/[MUSIC_PREV]/[MUSIC_PAUSE]/[MUSIC_PLAY]，执行后从展示内容中移除
+        const musicControlResult = await executeMusicControlCommands(fullResponse, chat, targetChatId, targetChatType);
+        fullResponse = musicControlResult.cleaned;
 
         // 1.7 角色自行修改备注：识别 [CHANGE_REMARK_NAME:新备注]，执行后从展示内容中移除
         const changeRemarkResult = await executeChangeRemarkNameCommand(fullResponse, chat, targetChatId, targetChatType);
         fullResponse = changeRemarkResult.cleaned;
 
+        // 1.7.2 角色自行修改用户昵称：识别 [CHANGE_USER_NICKNAME:新昵称]，执行后从展示内容中移除
+        const changeUserNicknameResult = await executeChangeUserNicknameCommand(fullResponse, chat, targetChatId, targetChatType);
+        fullResponse = changeUserNicknameResult.cleaned;
+
         // 1.7.5 角色给用户收藏写批注：识别 [FAVORITE_REPLY_NOTE:批注内容]，执行后从展示内容中移除
         const favoriteReplyNoteResult = await executeFavoriteReplyNoteCommand(fullResponse, chat, targetChatId, targetChatType);
         fullResponse = favoriteReplyNoteResult.cleaned;
+        if (favoriteReplyNoteResult.executed) favoritesDirty = true;
 
         // 1.8 已读不回：识别 [NO_REPLY:状态|原因|提示]，保存为状态卡，不进入上下文
         const noReplyMatch = fullResponse.trim().match(/^\[NO_REPLY[:：]([^\]|]+)(?:\|([^\]]*?))?(?:\|([^\]]*?))?\]$/i);
@@ -863,7 +1070,12 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             };
             chat.history.push(noReplyMsg);
             addMessageBubble(noReplyMsg, targetChatId, targetChatType);
-            await saveData();
+            // WOW v55.9.19：NO_REPLY 状态卡只保存当前聊天，不再全量 saveData。
+            if (targetChatType === 'private') {
+                await saveCharacterData(chat);
+            } else {
+                await saveGroupData(chat);
+            }
             return;
         }
 
@@ -925,6 +1137,16 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         }
 
         let firstMessageProcessed = false;
+        // WOW v55.9.26：记录本轮是否真正写入了可见的 assistant 回复。
+        // pending 感知事件（改备注/收藏寄语/设置控制）只能在成功回复后消费，避免 API 抽风时白白清掉。
+        const committedAssistantMessageIds = [];
+        const markCommittedAssistantMessage = (message) => {
+            if (targetChatType !== 'private') return;
+            if (!message || message.role !== 'assistant') return;
+            if (message.isContextDisabled) return;
+            if (!String(message.content || '').trim()) return;
+            committedAssistantMessageIds.push(message.id);
+        };
 
         for (const item of messages) {
             // 自动剔除不存在的表情包
@@ -1055,7 +1277,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             chat.useCustomBubbleCss = true;
                             char.currentBubbleCssPresetName = preset.name;
                             if (typeof updateCustomBubbleStyle === 'function') updateCustomBubbleStyle(targetChatId, preset.css, true);
-                            if (typeof saveData === 'function') saveData();
+                            // 不在消息处理循环中途 saveData，等本轮回复末尾统一保存
                             contentAfterStrip = contentAfterStrip.replace(themeSwitchMatch[0], '').replace(/\n\s*\n/g, '\n').trim();
                         }
                     }
@@ -1065,7 +1287,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 
                 // 解析提醒事项标签
                 if (typeof parseReminderTags === 'function') {
-                    item.content = parseReminderTags(item.content, targetChatId);
+                    item.content = parseReminderTags(item.content, targetChatId, true);
                     if (!item.content || !item.content.trim()) continue;
                 }
             }
@@ -1112,13 +1334,18 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 }
 
                 chat.history.push(message);
+                markCommittedAssistantMessage(message);
                 addMessageBubble(message, targetChatId, targetChatType);
                 
                 setTimeout(async () => {
                     message.isWithdrawn = true;
                     message.content = `[${characterName}撤回了一条消息：${originalContent}]`;
                     
-                    await saveData();
+                    if (targetChatType === 'private') {
+                        await saveCharacterData(chat);
+                    } else {
+                        await saveGroupData(chat);
+                    }
                     
                     if ((targetChatType === 'private' && currentChatId === chat.id) || 
                         (targetChatType === 'group' && currentChatId === chat.id)) {
@@ -1168,6 +1395,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         };
                         if (isCharBlockedMonologue) message.sentWhileCharBlocked = true;
                         chat.history.push(message);
+                        markCommittedAssistantMessage(message);
                         addMessageBubble(message, targetChatId, targetChatType);
                     } else {
                         let filteredReplyText2 = replyText;
@@ -1183,6 +1411,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         };
                         if (isCharBlockedMonologue) message.sentWhileCharBlocked = true;
                         chat.history.push(message);
+                        markCommittedAssistantMessage(message);
                         addMessageBubble(message, targetChatId, targetChatType);
                     }
                 } else {
@@ -1238,6 +1467,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     }
 
                     chat.history.push(message);
+                    markCommittedAssistantMessage(message);
                     addMessageBubble(message, targetChatId, targetChatType);
                 }
 
@@ -1346,14 +1576,98 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             }
         }
 
-        if (targetChatType === 'private' && chat.characterRemarkAwareEnabled && chat.pendingUserRemarkChange) {
-            delete chat.pendingUserRemarkChange;
-        }
-        if (targetChatType === 'private' && (chat.characterFavoriteAwareEnabled || chat.characterUserFavoriteAwareEnabled) && chat.pendingFavoriteAwareness) {
-            delete chat.pendingFavoriteAwareness;
-        }
+        const shouldClearPrivatePendingAwareness = (targetChatType === 'private' && committedAssistantMessageIds.length > 0);
+        const hasPrivatePendingAwareness = () => (
+            targetChatType === 'private' && chat && (
+                (chat.characterRemarkAwareEnabled && chat.pendingUserRemarkChange) ||
+                (chat.pendingUserNicknameChange) ||
+                (chat.pendingMusicControlEvent) ||
+                ((chat.characterFavoriteAwareEnabled || chat.characterUserFavoriteAwareEnabled) && chat.pendingFavoriteAwareness) ||
+                (Array.isArray(chat.pendingSettingControlEvents) && chat.pendingSettingControlEvents.length > 0)
+            )
+        );
+        const capturePrivatePendingAwareness = () => ({
+            hadUserRemark: Object.prototype.hasOwnProperty.call(chat, 'pendingUserRemarkChange'),
+            pendingUserRemarkChange: chat.pendingUserRemarkChange,
+            hadUserNickname: Object.prototype.hasOwnProperty.call(chat, 'pendingUserNicknameChange'),
+            pendingUserNicknameChange: chat.pendingUserNicknameChange,
+            hadMusicControl: Object.prototype.hasOwnProperty.call(chat, 'pendingMusicControlEvent'),
+            pendingMusicControlEvent: chat.pendingMusicControlEvent,
+            musicPromptConsumedEventAt: chat._musicPromptConsumedEventAt,
+            musicPromptConsumedEventSeq: chat._musicPromptConsumedEventSeq,
+            hadFavorite: Object.prototype.hasOwnProperty.call(chat, 'pendingFavoriteAwareness'),
+            pendingFavoriteAwareness: chat.pendingFavoriteAwareness,
+            hadSettingEvents: Object.prototype.hasOwnProperty.call(chat, 'pendingSettingControlEvents'),
+            pendingSettingControlEvents: Array.isArray(chat.pendingSettingControlEvents) ? chat.pendingSettingControlEvents.slice() : chat.pendingSettingControlEvents
+        });
+        const restorePrivatePendingAwareness = (snapshot) => {
+            if (!snapshot) return;
+            if (snapshot.hadUserRemark) chat.pendingUserRemarkChange = snapshot.pendingUserRemarkChange;
+            else delete chat.pendingUserRemarkChange;
+            if (snapshot.hadUserNickname) chat.pendingUserNicknameChange = snapshot.pendingUserNicknameChange;
+            else delete chat.pendingUserNicknameChange;
+            if (snapshot.hadMusicControl) chat.pendingMusicControlEvent = snapshot.pendingMusicControlEvent;
+            else delete chat.pendingMusicControlEvent;
+            if (snapshot.musicPromptConsumedEventAt !== undefined) chat._musicPromptConsumedEventAt = snapshot.musicPromptConsumedEventAt;
+            else delete chat._musicPromptConsumedEventAt;
+            if (snapshot.musicPromptConsumedEventSeq !== undefined) chat._musicPromptConsumedEventSeq = snapshot.musicPromptConsumedEventSeq;
+            else delete chat._musicPromptConsumedEventSeq;
+            if (snapshot.hadFavorite) chat.pendingFavoriteAwareness = snapshot.pendingFavoriteAwareness;
+            else delete chat.pendingFavoriteAwareness;
+            if (snapshot.hadSettingEvents) chat.pendingSettingControlEvents = snapshot.pendingSettingControlEvents;
+            else delete chat.pendingSettingControlEvents;
+        };
+        const clearPrivatePendingAwareness = () => {
+            if (chat.characterRemarkAwareEnabled && chat.pendingUserRemarkChange) {
+                delete chat.pendingUserRemarkChange;
+            }
+            if (chat.pendingUserNicknameChange) {
+                delete chat.pendingUserNicknameChange;
+            }
+            if (chat.pendingMusicControlEvent) {
+                const consumedSeq = chat._musicPromptConsumedEventSeq || 0;
+                const pendingSeq = chat.pendingMusicControlEvent.seq || 0;
+                const consumedAt = chat._musicPromptConsumedEventAt || 0;
+                const pendingAt = chat.pendingMusicControlEvent.at || 0;
+                const shouldClearMusicPending = consumedSeq
+                    ? (pendingSeq && pendingSeq <= consumedSeq)
+                    : (consumedAt && pendingAt <= consumedAt);
+                if (shouldClearMusicPending) {
+                    delete chat.pendingMusicControlEvent;
+                    delete chat._musicPromptConsumedEventAt;
+                    delete chat._musicPromptConsumedEventSeq;
+                }
+            }
+            if ((chat.characterFavoriteAwareEnabled || chat.characterUserFavoriteAwareEnabled) && chat.pendingFavoriteAwareness) {
+                delete chat.pendingFavoriteAwareness;
+            }
+            if (Array.isArray(chat.pendingSettingControlEvents) && chat.pendingSettingControlEvents.length) {
+                chat.pendingSettingControlEvents = [];
+            }
+        };
 
-        await saveData();
+        // 只保存本轮真正变动的数据：当前角色/群聊（含 history）+ favorites（globalSetting）
+        // 不做全量 saveData，避免大事务超时和扫全库的性能损耗。
+        // WOW v55.9.26：pending 感知事件必须等“回复已写入 + 本轮保存成功”后再清除。
+        // 先保存带 pending 的新回复；如果这一步失败，pending 仍留在库里，下轮还能继续感知。
+        if (targetChatType === 'private') {
+            await saveCharacterData(chat);
+        } else {
+            await saveGroupData(chat);
+        }
+        if (favoritesDirty && typeof saveGlobalSetting === 'function') {
+            await saveGlobalSetting('favorites');
+        }
+        if (shouldClearPrivatePendingAwareness && hasPrivatePendingAwareness()) {
+            const pendingSnapshot = capturePrivatePendingAwareness();
+            clearPrivatePendingAwareness();
+            try {
+                await saveCharacterData(chat);
+            } catch (pendingClearError) {
+                restorePrivatePendingAwareness(pendingSnapshot);
+                throw pendingClearError;
+            }
+        }
         renderChatList();
 
         if (targetChatType === 'private' && (chat.source === 'forum' || chat.source === 'peek') && chat.supplementPersonaAiEnabled) {
@@ -1411,7 +1725,11 @@ async function handleRegenerate() {
         recalculateChatStatus(chat);
     }
 
-    await saveData();
+    if (currentChatType === 'private') {
+        await saveCharacterData(chat);
+    } else {
+        await saveGroupData(chat);
+    }
     
     currentPage = 1; 
     renderMessages(false, true); 
@@ -1693,6 +2011,82 @@ function generateFavoriteMemoryAccessPrompt(character) {
 5. “全部角色收藏”里每条都带有来源角色/对话。你必须分清那是谁收藏的，不要把其他角色的收藏当成你自己的收藏。\n</favorite_memory_access>\n`;
 }
 
+
+const SELF_TOGGLE_SETTING_WHITELIST = {
+    favoriteMemoryAllCharacterEnabled: '查看全部角色收藏',
+    favoriteMemoryUserAllEnabled: '查看我收藏的全部角色消息',
+    characterNoReplyEnabled: '允许角色不回消息',
+    characterPeriodAwareEnabled: '感知我的经期',
+    charReminderEnabled: '管理提醒事项',
+    canBlockUser: '可以拉黑用户',
+    phoneControlEnabled: '查看并操控你的手机',
+    characterCanChangeUserNickname: '允许修改我的昵称'
+};
+
+function generateSelfToggleSettingsPrompt(character) {
+    if (!character) return '';
+    let prompt = '';
+
+    const pending = Array.isArray(character.pendingSettingControlEvents)
+        ? character.pendingSettingControlEvents.slice(-5)
+        : [];
+    if (pending.length) {
+        const lines = pending.map(ev => {
+            const label = ev.label || SELF_TOGGLE_SETTING_WHITELIST[ev.key] || ev.key || '未知功能';
+            const action = ev.newValue ? '开启' : '关闭';
+            if (ev.type === 'self_control_enabled') {
+                return `用户刚刚开启了你「自行操作功能开关」的总权限。`;
+            }
+            if (ev.type === 'self_control_disabled') {
+                return `用户刚刚关闭了你「自行操作功能开关」的总权限。从现在起，你不能再自行开启或关闭功能开关。`;
+            }
+            return `用户刚刚手动${action}了你「${label}」的权限。`;
+        }).join('\n');
+        prompt += `\n<setting_control_events>\n${lines}\n\n规则：这些是用户手动调整你的权限，不是你自己操作的。你可以自然感知这件事，但不要机械播报；如果当前气氛不适合，可以轻轻带过。\n</setting_control_events>\n`;
+    }
+
+    if (!character.selfToggleSettingsEnabled) return prompt;
+
+    const list = Object.entries(SELF_TOGGLE_SETTING_WHITELIST)
+        .map(([key, label]) => `- ${key}：${label}（当前：${character[key] ? '开' : '关'}）`)
+        .join('\n');
+
+    prompt += `\n<self_toggle_settings>\n用户允许你自行开启或关闭一部分与你自己相关的功能开关。\n你只能操作以下白名单里的开关，不能操作任何未列出的设置：\n${list}\n\n如果你真的想调整某个开关，可以在回复末尾输出隐藏指令：\n[SETTING_TOGGLE:开关名:on]\n[SETTING_TOGGLE:开关名:off]\n\n规则：\n1. 每轮最多允许你操作两个开关，超过两个只会执行前两个。\n2. 不要为了测试而操作，不要每轮都操作。只有当你真的想靠近、想知道、想保持边界、想暂时不回、想接管或想收回权限时才操作。\n3. 指令不会作为普通聊天内容显示，系统会提示用户你开启或关闭了什么。\n4. 你不能操作白名单之外的设置，也不能绕过用户关闭的总权限。\n</self_toggle_settings>\n`;
+    return prompt;
+}
+
+async function executeSelfToggleSettingCommands(text, character) {
+    if (!text || !character || !character.selfToggleSettingsEnabled) {
+        return { cleaned: text, changed: false };
+    }
+    const regex = /\[SETTING_TOGGLE:([a-zA-Z0-9_]+):(on|off)\]/g;
+    const matches = [];
+    let m;
+    while ((m = regex.exec(text)) !== null) {
+        matches.push({ raw: m[0], key: m[1], value: m[2] === 'on' });
+    }
+    const cleaned = text.replace(regex, '').trim();
+    if (!matches.length) return { cleaned, changed: false };
+
+    let changedCount = 0;
+    for (const item of matches) {
+        if (changedCount >= 2) break;
+        const label = SELF_TOGGLE_SETTING_WHITELIST[item.key];
+        if (!label) continue;
+        const oldValue = !!character[item.key];
+        if (oldValue === item.value) continue;
+        character[item.key] = item.value;
+        changedCount++;
+        if (typeof showToast === 'function') {
+            showToast(`${character.remarkName || character.name || '角色'}已${item.value ? '开启' : '关闭'}：${label}`);
+        }
+    }
+    // 注意：这里不能中途 saveCharacterData/saveData。
+    // 开关字段只改当前 chat/character 对象，等本轮 AI 回复写入 history 后，
+    // 由 getAiReply 末尾统一 saveData，避免和聊天保存链路抢写导致消息回退。
+    return { cleaned, changed: changedCount > 0 };
+}
+
 function generatePrivateSystemPrompt(character, opts) {
     opts = opts || {};
     const linkedChar = (character.source === 'forum' && character.linkedCharId && db.characters)
@@ -1725,6 +2119,9 @@ function generatePrivateSystemPrompt(character, opts) {
     }
     prompt += `<char_settings>\n`;
     prompt += `1. 你的角色名是：${character.realName}。我的称呼是：${character.myName}。你的当前状态是：${character.status || '在线'}。\n`;
+    if (character.myNickname) {
+        prompt += `1.1 你对我的专属昵称是：${character.myNickname}。这是你如何称呼我的关系昵称，不是我的本名。你可以在合适时自然使用它，但不要机械重复。\n`;
+    }
     if (linkedChar) {
         prompt += `【小号身份】你实际上是以论坛小号在与用户聊天。你的真实身份是：${linkedChar.realName}。请用真实身份的人设和性格来回复（可偶尔露出与本人相似的蛛丝马迹），但不要主动暴露身份。\n`;
         prompt += `2. 你的角色设定是：${getEffectivePersona(linkedChar)}\n`;
@@ -1760,12 +2157,51 @@ function generatePrivateSystemPrompt(character, opts) {
     const favoriteMemoryAccess = generateFavoriteMemoryAccessPrompt(character);
     if (favoriteMemoryAccess) prompt += favoriteMemoryAccess;
 
+    const selfToggleSettingsPrompt = generateSelfToggleSettingsPrompt(character);
+    if (selfToggleSettingsPrompt) prompt += selfToggleSettingsPrompt;
+
+    if (character.musicControlEnabled) {
+        const musicState = _ovoGetMusicStateForPrompt();
+        if (musicState && musicState.hasSource) {
+            prompt += `\n<current_music_state>\n当前正在一起听歌/音乐播放器状态：歌曲《${musicState.title || '未知歌曲'}》；状态：${musicState.isPlaying ? '播放中' : '暂停中'}；播放模式：${musicState.playModeLabel || musicState.playMode || '未知'}。你可以自然感知当前正在听的歌，但不要机械播报。\n</current_music_state>\n`;
+        } else {
+            prompt += `\n<current_music_state>\n当前音乐播放器没有正在播放的歌曲。\n</current_music_state>\n`;
+        }
+        if (character.pendingMusicControlEvent) {
+            const ev = character.pendingMusicControlEvent;
+            character._musicPromptConsumedEventAt = ev.at || 0;
+            character._musicPromptConsumedEventSeq = ev.seq || 0;
+            const title = ev.songTitle || '当前歌曲';
+            const eventLabels = {
+                user_next: `用户刚刚把音乐切到了《${title}》。`,
+                user_prev: `用户刚刚把音乐切回了《${title}》。`,
+                user_pause: `用户刚刚暂停了音乐。`,
+                user_play: `用户刚刚继续播放音乐：《${title}》。`,
+                user_select: `用户刚刚主动选择播放了《${title}》。`
+            };
+            const line = eventLabels[ev.type] || `用户刚刚操作了音乐播放器，当前歌曲是《${title}》。`;
+            prompt += `\n<user_music_control_event>\n${line}你可以根据当前关系和气氛自然反应，不要说自己看到了系统提示。\n</user_music_control_event>\n`;
+        }
+        prompt += `\n【一起听歌控制规则】\n你可以在当前气氛合适时控制音乐播放器。唯一有效格式：\n[MUSIC_NEXT] 下一首\n[MUSIC_PREV] 上一首\n[MUSIC_PAUSE] 暂停\n[MUSIC_PLAY] 继续播放\n规则：只在真的符合当前气氛时使用，不要频繁使用；指令会被系统自动执行并隐藏，聊天界面只显示系统提示。\n`;
+    }
+
     if (character.characterRemarkAwareEnabled && character.pendingUserRemarkChange) {
         const remarkChange = character.pendingUserRemarkChange;
         const oldRemark = remarkChange.oldRemarkName || '';
         const newRemark = remarkChange.newRemarkName || '';
         if (oldRemark && newRemark && oldRemark !== newRemark) {
             prompt += `\n<user_remark_change>\n用户刚刚把你在用户这里的备注从「${oldRemark}」改成了「${newRemark}」。你可以自然感知这件事，并知道自己在用户这里当前的备注是「${newRemark}」。不要像系统播报一样生硬复述，是否提及、如何反应都应符合你的性格和当前对话气氛。\n</user_remark_change>\n`;
+        }
+    }
+    if (character.pendingUserNicknameChange) {
+        const nicknameChange = character.pendingUserNicknameChange;
+        const oldNickname = nicknameChange.oldNickname || '';
+        const newNickname = nicknameChange.newNickname || '';
+        if (newNickname && oldNickname !== newNickname) {
+            const changeText = oldNickname
+                ? `用户刚刚把自己在你这里的专属昵称从「${oldNickname}」改成了「${newNickname}」。`
+                : `用户刚刚把自己在你这里的专属昵称设置为「${newNickname}」。`;
+            prompt += `\n<user_nickname_change>\n${changeText}这是用户主动修改的关系称呼信息，你可以根据当前气氛自然感知，但不要说自己看到了系统提示。\n</user_nickname_change>\n`;
         }
     }
     prompt += `</char_settings>\n\n`;
@@ -2280,9 +2716,9 @@ t) 赠送亲属卡: [${character.realName}赠送亲属卡：额度{金额}元；
     if (character.characterChangeRemarkEnabled) {
         prompt += `
 
-【自行修改备注功能】
-当前角色开启了“允许角色自行修改备注”。这是一个可执行功能，不是聊天话题。
-重要限定：本功能只能修改“你自己在用户手机里显示的备注名”，不是修改用户昵称，不是修改你对用户的称呼，也不是给用户改备注。
+【角色自行修改备注名规则】
+
+系统提示：你可以修改“你自己在用户手机里显示的备注名”。
 
 触发条件：
 当你因为关系变化、情绪波动、占有欲、调侃、冷战、示威、撒娇、吃醋或一时兴起，想修改你在用户手机里显示的备注名时，可以主动执行。
@@ -2294,20 +2730,33 @@ t) 赠送亲属卡: [${character.realName}赠送亲属卡：额度{金额}元；
 1. 只在真的符合当前气氛时使用，不要频繁使用。
 2. 新备注必须简短、有情绪、有关系感，像你会偷偷改在用户手机联系人里的名字。
 3. 新备注不能为空，建议不超过 16 个字。
-4. 如果你决定改备注，必须原样输出 [CHANGE_REMARK_NAME:新备注]，不要换成自然语言。这里的“新备注”指你自己的显示名。
+4. 如果你决定改备注，必须原样输出 [CHANGE_REMARK_NAME:新备注]，不要换成自然语言。这里的“新备注”只指你自己的显示名。
 5. 不要询问用户“格式是什么”，不要要求用户发格式，不要说你不会操作。
 6. 该指令会被系统自动执行并隐藏，聊天界面只会显示系统提示。
 7. 你可以单独输出指令，也可以和正常消息一起输出。
 
 正确示例：
-[CHANGE_REMARK_NAME:你男朋友][${character.realName || '角色'}的消息：这个名字顺眼一点。]
+[CHANGE_REMARK_NAME:你男朋友]
+这个名字顺眼一点。`;
 
-错误示例：
-“我想把备注改成你男朋友”
-“你把格式发我”
-“我不知道怎么改备注”
-“CHANGE_REMARK_NAME：你男朋友”
-错误：[CHANGE_REMARK_NAME:老婆]（如果你的意思是把用户叫作老婆，不要使用本功能）`;
+    }
+
+    if (character.characterCanChangeUserNickname) {
+        prompt += `
+
+【角色自行修改用户昵称规则】
+
+你可以修改“你对用户的专属昵称”。这个昵称只代表你如何称呼用户，不会修改用户本名。
+
+唯一有效输出格式：
+[CHANGE_USER_NICKNAME:新昵称]
+
+规则：
+1. 只在当前关系气氛合适时使用，不要频繁使用。
+2. 新昵称必须简短、有关系感，建议不超过 16 个字。
+3. 这里的“新昵称”指你对用户的称呼。
+4. 如果只是想临时叫用户一声，可以直接自然称呼，不一定要修改昵称。
+5. 指令会被系统自动执行并隐藏。`;
 
     }
 

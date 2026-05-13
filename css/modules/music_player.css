@@ -2130,3 +2130,391 @@
         gap: 4px;
     }
 }
+
+
+/* 聊天页悬浮迷你播放器（轻量版） */
+#chat-room-screen .chat-music-float {
+    position: absolute;
+    right: 12px;
+    bottom: 92px;
+    z-index: 65;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: none;
+    touch-action: none;
+}
+#chat-room-screen .chat-music-float * { box-sizing: border-box; }
+#chat-room-screen .chat-music-float-toggle,
+#chat-room-screen .chat-music-float-btn,
+#chat-room-screen .chat-music-float-close {
+    pointer-events: auto;
+    border: none;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+#chat-room-screen .chat-music-float-toggle {
+    width: 34px;
+    height: 34px;
+    border-radius: 0;
+    background: transparent;
+    color: #7a6a86;
+    box-shadow: none;
+    backdrop-filter: none;
+    font-size: 25px;
+    line-height: 34px;
+    text-align: center;
+    text-shadow: 0 3px 10px rgba(0,0,0,0.18);
+    cursor: grab;
+    position: relative;
+}
+#chat-room-screen .chat-music-float.is-playing .chat-music-float-toggle {
+    color: #d96f9f;
+}
+#chat-room-screen .chat-music-float.dragging .chat-music-float-toggle,
+#chat-room-screen .chat-music-float.dragging .chat-music-float-info,
+#chat-room-screen .chat-music-float.dragging .chat-music-float-panel {
+    cursor: grabbing;
+}
+#chat-room-screen .chat-music-float.dragging .chat-music-float-panel,
+#chat-room-screen .chat-music-float.dragging .chat-music-float-toggle {
+    opacity: .86;
+}
+
+#chat-room-screen .chat-music-float.icon-hidden .chat-music-float-toggle {
+    opacity: .22;
+    text-shadow: none;
+    font-size: 18px;
+}
+#chat-room-screen .chat-music-float.icon-hidden .chat-music-float-toggle::before {
+    content: '•';
+}
+#chat-room-screen .chat-music-float.icon-hidden .chat-music-float-toggle {
+    color: rgba(217,111,159,0.55);
+}
+#chat-room-screen .chat-music-float.icon-hidden .chat-music-float-toggle {
+    font-size: 0;
+}
+#chat-room-screen .chat-music-float.icon-hidden .chat-music-float-toggle::before {
+    font-size: 22px;
+    line-height: 34px;
+}
+#chat-room-screen .chat-music-float.icon-hidden .chat-music-float-toggle::after {
+    content: '';
+    position: absolute;
+    left: -14px;
+    top: -14px;
+    right: -14px;
+    bottom: -14px;
+}
+#chat-room-screen .chat-music-float-icon-hide {
+    position: absolute;
+    right: 7px;
+    bottom: -20px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: none;
+    background: rgba(255,255,255,0.72);
+    color: #8b7b8f;
+    font-size: 11px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+    pointer-events: auto;
+}
+#chat-room-screen .chat-music-float.collapsed .chat-music-float-icon-hide,
+#chat-room-screen .chat-music-float.icon-hidden .chat-music-float-icon-hide {
+    display: none;
+}
+#chat-room-screen .chat-music-float-panel {
+    width: min(250px, calc(100vw - 86px));
+    padding: 9px 10px 8px;
+    cursor: grab;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.16);
+    backdrop-filter: blur(14px);
+    pointer-events: auto;
+    position: relative;
+    transform-origin: bottom right;
+    transition: opacity .18s ease, transform .18s ease;
+}
+#chat-room-screen .chat-music-float.collapsed .chat-music-float-panel {
+    opacity: 0;
+    transform: scale(.92) translateY(8px);
+    pointer-events: none;
+    display: none;
+}
+#chat-room-screen .chat-music-float.expanded .chat-music-float-toggle {
+    display: none;
+}
+#chat-room-screen .chat-music-float-close {
+    position: absolute;
+    right: 7px;
+    top: 5px;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: rgba(0,0,0,0.05);
+    color: #777;
+    font-size: 16px;
+    line-height: 20px;
+}
+#chat-room-screen .chat-music-float-info {
+    display: flex;
+    align-items: center;
+    cursor: grab;
+    gap: 6px;
+    padding-right: 24px;
+    margin-bottom: 8px;
+    min-width: 0;
+}
+#chat-room-screen .chat-music-float-note {
+    color: #d96f9f;
+    font-size: 15px;
+    flex: 0 0 auto;
+}
+#chat-room-screen .chat-music-float-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: #4b4650;
+    font-weight: 600;
+}
+#chat-room-screen .chat-music-float-actions {
+    display: flex;
+    align-items: center;
+    cursor: default;
+    justify-content: space-between;
+    gap: 6px;
+}
+#chat-room-screen .chat-music-float-btn {
+    min-width: 38px;
+    height: 30px;
+    border-radius: 999px;
+    background: rgba(217,111,159,0.12);
+    color: #84536a;
+    font-size: 14px;
+}
+#chat-room-screen .chat-music-float-play {
+    min-width: 44px;
+    background: rgba(217,111,159,0.2);
+    color: #c24f85;
+    font-weight: 700;
+}
+#chat-room-screen .chat-music-float-btn:disabled {
+    opacity: .38;
+}
+#chat-room-screen .chat-music-float.is-empty .chat-music-float-btn:not(#chat-music-float-open) {
+    opacity: .45;
+}
+@media (max-width: 420px) {
+    #chat-room-screen .chat-music-float {
+        right: 10px;
+        bottom: 86px;
+    }
+    #chat-room-screen .chat-music-float-panel {
+        width: min(236px, calc(100vw - 76px));
+    }
+}
+
+
+/* WOW v57.6.3：隐藏入口改为真实文本小点，不再依赖 button::before，避免 iOS/PWA 不显示伪元素 */
+#chat-room-screen .chat-music-float.icon-hidden .chat-music-float-toggle {
+    opacity: .62 !important;
+    width: 22px;
+    height: 22px;
+    font-size: 15px !important;
+    line-height: 22px !important;
+    color: rgba(150,150,150,0.88) !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+}
+#chat-room-screen .chat-music-float.icon-hidden .chat-music-float-toggle::before {
+    content: '' !important;
+    display: none !important;
+}
+#chat-room-screen .chat-music-float.icon-hidden .chat-music-float-toggle::after {
+    content: '';
+    position: absolute;
+    left: -16px;
+    top: -16px;
+    right: -16px;
+    bottom: -16px;
+    background: transparent;
+}
+
+/* WOW v57.6.4：聊天页一起听歌悬浮窗顶层修复
+   挂载到 body 后不再依赖 #chat-room-screen 祖先选择器，避免聊天主题/背景层遮挡或拦截点击。 */
+#chat-music-float.chat-music-float.body-level {
+    position: fixed !important;
+    right: 12px;
+    bottom: 92px;
+    z-index: 2147483000 !important;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: none !important;
+    touch-action: none;
+    isolation: isolate;
+}
+#chat-music-float.chat-music-float.body-level * { box-sizing: border-box; }
+#chat-music-float.chat-music-float.body-level .chat-music-float-toggle,
+#chat-music-float.chat-music-float.body-level .chat-music-float-btn,
+#chat-music-float.chat-music-float.body-level .chat-music-float-close,
+#chat-music-float.chat-music-float.body-level .chat-music-float-icon-hide,
+#chat-music-float.chat-music-float.body-level .chat-music-float-panel {
+    pointer-events: auto !important;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-toggle,
+#chat-music-float.chat-music-float.body-level .chat-music-float-btn,
+#chat-music-float.chat-music-float.body-level .chat-music-float-close {
+    border: none;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-toggle {
+    width: 34px;
+    height: 34px;
+    border-radius: 0;
+    background: transparent;
+    color: #7a6a86;
+    box-shadow: none;
+    backdrop-filter: none;
+    font-size: 25px;
+    line-height: 34px;
+    text-align: center;
+    text-shadow: 0 3px 10px rgba(0,0,0,0.18);
+    cursor: grab;
+    position: relative;
+}
+#chat-music-float.chat-music-float.body-level.is-playing .chat-music-float-toggle { color: #d96f9f; }
+#chat-music-float.chat-music-float.body-level.dragging .chat-music-float-toggle,
+#chat-music-float.chat-music-float.body-level.dragging .chat-music-float-info,
+#chat-music-float.chat-music-float.body-level.dragging .chat-music-float-panel { cursor: grabbing; }
+#chat-music-float.chat-music-float.body-level.dragging .chat-music-float-panel,
+#chat-music-float.chat-music-float.body-level.dragging .chat-music-float-toggle { opacity: .86; }
+#chat-music-float.chat-music-float.body-level.icon-hidden .chat-music-float-toggle {
+    opacity: .62 !important;
+    width: 22px;
+    height: 22px;
+    font-size: 15px !important;
+    line-height: 22px !important;
+    color: rgba(150,150,150,0.88) !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+}
+#chat-music-float.chat-music-float.body-level.icon-hidden .chat-music-float-toggle::before {
+    content: '' !important;
+    display: none !important;
+}
+#chat-music-float.chat-music-float.body-level.icon-hidden .chat-music-float-toggle::after {
+    content: '';
+    position: absolute;
+    left: -16px;
+    top: -16px;
+    right: -16px;
+    bottom: -16px;
+    background: transparent;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-icon-hide {
+    position: absolute;
+    right: 7px;
+    bottom: -20px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: none;
+    background: rgba(255,255,255,0.72);
+    color: #8b7b8f;
+    font-size: 11px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+}
+#chat-music-float.chat-music-float.body-level.collapsed .chat-music-float-icon-hide,
+#chat-music-float.chat-music-float.body-level.icon-hidden .chat-music-float-icon-hide { display: none; }
+#chat-music-float.chat-music-float.body-level .chat-music-float-panel {
+    width: min(250px, calc(100vw - 86px));
+    padding: 9px 10px 8px;
+    cursor: grab;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.16);
+    backdrop-filter: blur(14px);
+    position: relative;
+    transform-origin: bottom right;
+    transition: opacity .18s ease, transform .18s ease;
+}
+#chat-music-float.chat-music-float.body-level.collapsed .chat-music-float-panel {
+    opacity: 0;
+    transform: scale(.92) translateY(8px);
+    pointer-events: none !important;
+    display: none;
+}
+#chat-music-float.chat-music-float.body-level.expanded .chat-music-float-toggle { display: none; }
+#chat-music-float.chat-music-float.body-level .chat-music-float-close {
+    position: absolute;
+    right: 7px;
+    top: 5px;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: rgba(0,0,0,0.05);
+    color: #777;
+    font-size: 16px;
+    line-height: 20px;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-info {
+    display: flex;
+    align-items: center;
+    cursor: grab;
+    gap: 6px;
+    padding-right: 24px;
+    margin-bottom: 8px;
+    min-width: 0;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-note {
+    color: #d96f9f;
+    font-size: 15px;
+    flex: 0 0 auto;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: #4b4650;
+    font-weight: 600;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-actions {
+    display: flex;
+    align-items: center;
+    cursor: default;
+    justify-content: space-between;
+    gap: 6px;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-btn {
+    min-width: 38px;
+    height: 30px;
+    border-radius: 999px;
+    background: rgba(217,111,159,0.12);
+    color: #84536a;
+    font-size: 14px;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-play {
+    min-width: 44px;
+    background: rgba(217,111,159,0.2);
+    color: #c24f85;
+    font-weight: 700;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-btn:disabled { opacity: .38; }
+#chat-music-float.chat-music-float.body-level.is-empty .chat-music-float-btn:not(#chat-music-float-open) { opacity: .45; }
+@media (max-width: 420px) {
+    #chat-music-float.chat-music-float.body-level { right: 10px; bottom: 86px; }
+    #chat-music-float.chat-music-float.body-level .chat-music-float-panel { width: min(236px, calc(100vw - 76px)); }
+}
