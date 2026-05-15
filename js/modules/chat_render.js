@@ -632,6 +632,85 @@ function createMessageBubbleElement(message, isContinuous = false) {
     // ... 后续代码不变 ...
 
 
+    if (message.type === 'music_share_card' && message.musicShare) {
+        const share = message.musicShare || {};
+        const song = share.song || {};
+        const direction = share.direction || 'user_to_character';
+        const status = share.status || 'pending';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'message-wrapper music-share-wrapper ' + (direction === 'user_to_character' ? 'sent' : 'received');
+        wrapper.dataset.id = id;
+
+        const card = document.createElement('div');
+        card.className = 'music-share-card music-share-' + status + ' music-share-' + direction;
+
+        const safe = function(v) { return DOMPurify.sanitize(String(v || '')); };
+        const title = song.title || song.rawTitle || '未命名歌曲';
+        const artist = song.artist || '';
+        const cover = song.cover || '';
+        const fromName = share.fromName || (direction === 'user_to_character' ? '你' : '对方');
+        const toName = share.toName || (direction === 'user_to_character' ? '对方' : '你');
+
+        let topText = '';
+        if (direction === 'user_to_character') topText = `${fromName}分享了一首歌给${toName}`;
+        else topText = `${fromName}想和${toName}听这首歌`;
+
+        let footer = '';
+        if (direction === 'character_to_user' && status === 'pending') {
+            footer = `
+                <div class="music-share-actions">
+                    <button type="button" class="music-share-action music-share-accept" data-share-id="${safe(share.shareId)}">同意</button>
+                    <button type="button" class="music-share-action music-share-decline" data-share-id="${safe(share.shareId)}">先不听</button>
+                </div>`;
+        } else {
+            let label = '等待回应';
+            if (direction === 'user_to_character') {
+                if (status === 'pending') label = '等待对方回应';
+                else if (status === 'accepted') label = '对方已同意 · 一起听中';
+                else if (status === 'declined') label = '对方先不听';
+            } else {
+                if (status === 'accepted') label = '你已同意 · 一起听中';
+                else if (status === 'declined') label = '你先不听';
+            }
+            footer = `<div class="music-share-status">${safe(label)}</div>`;
+        }
+
+        card.innerHTML = `
+            <div class="music-share-note">${safe(topText)}</div>
+            <div class="music-share-main">
+                ${cover ? `<img class="music-share-cover" src="${safe(cover)}" alt="歌曲封面">` : `<div class="music-share-cover music-share-cover-placeholder">♪</div>`}
+                <div class="music-share-info">
+                    <div class="music-share-title">${safe(title)}</div>
+                    <div class="music-share-artist">${safe(artist || '未知歌手')}</div>
+                </div>
+                <div class="music-share-mark">♫</div>
+            </div>
+            ${footer}
+        `;
+        wrapper.appendChild(card);
+
+        if (direction === 'character_to_user' && status === 'pending') {
+            const acceptBtn = card.querySelector('.music-share-accept');
+            const declineBtn = card.querySelector('.music-share-decline');
+            const respond = async function(accepted) {
+                if (!window.OVOMusicShare || typeof window.OVOMusicShare.respondToCharacterShare !== 'function') {
+                    if (typeof showToast === 'function') showToast('音乐分享模块还没准备好');
+                    return;
+                }
+                try {
+                    await window.OVOMusicShare.respondToCharacterShare(share.shareId, accepted);
+                } catch (e) {
+                    console.warn('[MusicShare] 回应分享失败:', e);
+                    if (typeof showToast === 'function') showToast('操作失败');
+                }
+            };
+            if (acceptBtn) acceptBtn.addEventListener('click', function() { respond(true); });
+            if (declineBtn) declineBtn.addEventListener('click', function() { respond(false); });
+        }
+        return wrapper;
+    }
+
+
     const avatarMode = chat.avatarMode || 'full';
     let avatarClass = 'message-avatar';
     

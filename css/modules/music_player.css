@@ -2518,3 +2518,478 @@
     #chat-music-float.chat-music-float.body-level { right: 10px; bottom: 86px; }
     #chat-music-float.chat-music-float.body-level .chat-music-float-panel { width: min(236px, calc(100vw - 76px)); }
 }
+
+/* WOW v57.8.3：聊天页一起听面板微调（去耳机线，改小云朵 + ∞ 连接） */
+#chat-music-float.chat-music-float.body-level .chat-music-float-panel.together-panel {
+    width: min(342px, calc(100vw - 24px)) !important;
+    padding: 18px 16px 14px !important;
+    border-radius: 28px !important;
+    background: rgba(255, 255, 255, 0.86) !important;
+    box-shadow: 0 18px 48px rgba(42, 35, 54, 0.18) !important;
+    backdrop-filter: blur(18px) saturate(1.2) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(1.2) !important;
+    color: #3f3a44;
+    overflow: visible;
+}
+#chat-music-float.chat-music-float.body-level .together-head {
+    display: grid;
+    grid-template-columns: 1fr 22px 1fr;
+    align-items: center;
+    gap: 2px;
+    margin: 0 10px 8px;
+    cursor: grab;
+    position: relative;
+}
+#chat-music-float.chat-music-float.body-level .together-person {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+}
+#chat-music-float.chat-music-float.body-level .together-avatar {
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: rgba(255,255,255,0.58);
+    box-shadow: inset 0 0 0 2px rgba(190,180,194,0.28), 0 8px 22px rgba(70,60,80,0.10);
+}
+#chat-music-float.chat-music-float.body-level .together-bubble {
+    min-width: 64px;
+    min-height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.82);
+    box-shadow: 0 8px 22px rgba(70,60,80,0.08);
+    color: rgba(70,65,78,0.76);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1;
+    margin-bottom: 2px;
+    position: relative;
+    z-index: 2;
+}
+#chat-music-float.chat-music-float.body-level .together-bubble::before,
+#chat-music-float.chat-music-float.body-level .together-bubble::after {
+    content: '';
+    position: absolute;
+    background: rgba(255,255,255,0.82);
+    border-radius: 50%;
+    z-index: -1;
+}
+#chat-music-float.chat-music-float.body-level .together-bubble::before {
+    width: 16px;
+    height: 16px;
+    left: 8px;
+    top: -6px;
+}
+#chat-music-float.chat-music-float.body-level .together-bubble::after {
+    width: 14px;
+    height: 14px;
+    right: 10px;
+    top: -4px;
+}
+#chat-music-float.chat-music-float.body-level .together-name {
+    max-width: 92px;
+    margin-top: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #4b4650;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#chat-music-float.chat-music-float.body-level .together-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    width: 30px;
+    height: 30px;
+    margin-top: 8px;
+    color: rgba(92, 84, 102, 0.68);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    pointer-events: auto;
+    -webkit-tap-highlight-color: transparent;
+}
+#chat-music-float.chat-music-float.body-level .together-link:active {
+    transform: scale(.92);
+    color: rgba(92, 84, 102, 0.95);
+}
+#chat-music-float.chat-music-float.body-level .together-distance {
+    text-align: center;
+    margin: 4px 0 12px;
+    color: rgba(75,70,80,0.48);
+    font-size: 13px;
+    font-weight: 650;
+}
+#chat-music-float.chat-music-float.body-level .together-card {
+    border-radius: 18px;
+    background: rgba(250, 248, 252, 0.82);
+    box-shadow: 0 10px 28px rgba(50,45,56,0.08);
+    padding: 12px 12px 10px;
+    cursor: default;
+}
+#chat-music-float.chat-music-float.body-level .together-song-title {
+    color: #3f3a44;
+    font-size: 14px;
+    font-weight: 800;
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    padding: 0 18px;
+}
+#chat-music-float.chat-music-float.body-level .together-song-meta {
+    margin-top: 3px;
+    color: rgba(70,65,78,0.58);
+    font-size: 11px;
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+#chat-music-float.chat-music-float.body-level .together-lyric-marquee {
+    height: 20px;
+    margin: 6px 18px 2px;
+    overflow: hidden;
+    color: rgba(60,55,68,0.52);
+    font-size: 12px;
+    line-height: 20px;
+    text-align: center;
+    white-space: nowrap;
+}
+#chat-music-float.chat-music-float.body-level .together-lyric-marquee span {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: top;
+}
+#chat-music-float.chat-music-float.body-level .together-progress-row {
+    display: grid;
+    grid-template-columns: 38px 1fr 38px;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0 12px;
+    color: rgba(60,55,68,0.58);
+    font-size: 11px;
+    font-weight: 650;
+}
+#chat-music-float.chat-music-float.body-level .together-progress-track {
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(80,70,90,0.10);
+    overflow: hidden;
+}
+#chat-music-float.chat-music-float.body-level .together-progress-fill {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: rgba(55,50,62,0.52);
+    transition: width .18s linear;
+}
+#chat-music-float.chat-music-float.body-level .together-actions {
+    display: grid !important;
+    grid-template-columns: 28px 28px 38px 48px 38px 28px 28px;
+    align-items: center;
+    justify-content: center !important;
+    gap: 8px !important;
+}
+#chat-music-float.chat-music-float.body-level .together-actions .chat-music-float-btn {
+    min-width: 0 !important;
+    width: 100%;
+    height: 32px;
+    border-radius: 999px !important;
+    background: transparent !important;
+    color: rgba(45,42,50,0.82) !important;
+    box-shadow: none !important;
+    font-size: 15px !important;
+    font-weight: 800;
+    padding: 0;
+}
+#chat-music-float.chat-music-float.body-level .together-actions .together-side {
+    font-size: 14px !important;
+    color: rgba(70,65,78,0.58) !important;
+}
+#chat-music-float.chat-music-float.body-level .together-actions .together-main {
+    font-size: 18px !important;
+}
+#chat-music-float.chat-music-float.body-level .together-actions .together-play {
+    height: 42px !important;
+    width: 48px !important;
+    background: rgba(45,42,50,0.12) !important;
+    color: rgba(30,28,34,0.92) !important;
+    font-size: 24px !important;
+    line-height: 42px;
+}
+#chat-music-float.chat-music-float.body-level .together-actions .chat-music-float-btn:disabled {
+    opacity: .26 !important;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-close {
+    top: 8px !important;
+    right: 8px !important;
+    background: rgba(255,255,255,0.55) !important;
+    color: rgba(70,65,78,0.56) !important;
+}
+#chat-music-float.chat-music-float.body-level .chat-music-float-icon-hide {
+    right: 10px !important;
+    bottom: -21px !important;
+}
+@media (max-width: 380px) {
+    #chat-music-float.chat-music-float.body-level .chat-music-float-panel.together-panel {
+        width: calc(100vw - 18px) !important;
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+    }
+    #chat-music-float.chat-music-float.body-level .together-actions {
+        gap: 6px !important;
+        grid-template-columns: 26px 26px 36px 44px 36px 26px 26px;
+    }
+    #chat-music-float.chat-music-float.body-level .together-head {
+        grid-template-columns: 1fr 18px 1fr;
+        margin-left: 6px;
+        margin-right: 6px;
+    }
+    #chat-music-float.chat-music-float.body-level .together-link {
+        font-size: 20px;
+    }
+}
+
+
+/* WOW v58：歌曲分享邀请卡 */
+.music-share-wrapper {
+    width: 100%;
+    display: flex;
+    margin: 8px 0;
+}
+.music-share-wrapper.sent { justify-content: flex-end; }
+.music-share-wrapper.received { justify-content: flex-start; }
+/* WOW v58.1：歌曲分享卡片 · 方块封面 + 深灰/银灰 */
+.music-share-card {
+    width: min(250px, 72vw);
+    border-radius: 30px;
+    padding: 16px;
+    background: linear-gradient(145deg, rgba(75,70,74,0.94), rgba(55,50,55,0.96));
+    color: rgba(255,255,255,0.94);
+    box-shadow: 0 16px 36px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.12);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.13);
+    font-family: inherit;
+}
+.music-share-wrapper.sent .music-share-card {
+    background: linear-gradient(145deg, rgba(235,234,232,0.97), rgba(207,205,203,0.96));
+    color: rgba(52, 49, 55, 0.94);
+    border-color: rgba(255,255,255,0.48);
+    box-shadow: 0 14px 34px rgba(90,84,92,0.16), inset 0 1px 0 rgba(255,255,255,0.66);
+}
+.music-share-note {
+    font-size: 12px;
+    opacity: 0.68;
+    margin-bottom: 12px;
+    line-height: 1.35;
+    letter-spacing: .2px;
+}
+.music-share-main {
+    display: grid;
+    grid-template-columns: 76px 1fr 24px;
+    gap: 14px;
+    align-items: start;
+}
+.music-share-cover {
+    width: 76px;
+    height: 76px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: rgba(255,255,255,0.16);
+    box-shadow: 0 10px 22px rgba(0,0,0,0.18);
+}
+.music-share-cover-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    color: rgba(255,255,255,0.80);
+}
+.music-share-wrapper.sent .music-share-cover-placeholder {
+    background: rgba(92,88,94,0.18);
+    color: rgba(74,70,78,0.62);
+}
+.music-share-info {
+    min-width: 0;
+    padding-top: 4px;
+}
+.music-share-title {
+    font-size: 20px;
+    font-weight: 850;
+    line-height: 1.12;
+    letter-spacing: -.2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.music-share-artist {
+    margin-top: 7px;
+    font-size: 15px;
+    line-height: 1.18;
+    opacity: 0.66;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.music-share-mark {
+    align-self: start;
+    text-align: right;
+    font-size: 26px;
+    line-height: 1;
+    opacity: 0.86;
+}
+.music-share-actions {
+    display: flex;
+    gap: 9px;
+    margin-top: 18px;
+}
+.music-share-action {
+    border: 0;
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    font-family: inherit;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+}
+.music-share-accept {
+    color: rgba(255,255,255,0.96);
+    background: rgba(255,255,255,0.23);
+    flex: 1.12;
+}
+.music-share-decline {
+    color: rgba(255,255,255,0.72);
+    background: rgba(255,255,255,0.11);
+    flex: .96;
+}
+.music-share-wrapper.sent .music-share-accept,
+.music-share-wrapper.sent .music-share-decline {
+    background: rgba(80,76,84,0.11);
+    color: rgba(56,52,60,0.84);
+}
+.music-share-status {
+    margin-top: 18px;
+    padding: 11px 13px;
+    border-radius: 999px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 850;
+    background: rgba(255,255,255,0.16);
+    color: inherit;
+    opacity: 0.90;
+}
+.music-share-wrapper.sent .music-share-status {
+    background: rgba(88,84,90,0.12);
+    color: rgba(58,54,62,0.86);
+}
+.music-share-accepted .music-share-status {
+    background: rgba(176, 196, 184, 0.26);
+}
+.music-share-declined .music-share-status {
+    opacity: 0.58;
+}
+@media (max-width: 420px) {
+    .music-share-card {
+        width: min(246px, 74vw);
+        padding: 15px;
+        border-radius: 28px;
+    }
+    .music-share-main {
+        grid-template-columns: 70px 1fr 22px;
+        gap: 12px;
+    }
+    .music-share-cover {
+        width: 70px;
+        height: 70px;
+    }
+    .music-share-title {
+        font-size: 19px;
+    }
+}
+
+.music-share-target-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483200;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+}
+.music-share-target-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.22);
+}
+.music-share-target-panel {
+    position: relative;
+    width: min(420px, calc(100vw - 24px));
+    max-height: 70vh;
+    overflow: auto;
+    margin: 0 12px 18px;
+    border-radius: 26px;
+    padding: 18px;
+    background: rgba(255,255,255,0.96);
+    box-shadow: 0 18px 50px rgba(0,0,0,0.22);
+    color: #333;
+}
+.music-share-target-title {
+    font-size: 18px;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+.music-share-target-song {
+    font-size: 13px;
+    opacity: 0.62;
+    margin-bottom: 12px;
+}
+.music-share-target-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.music-share-target-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    border: 0;
+    border-radius: 16px;
+    padding: 10px;
+    background: rgba(0,0,0,0.04);
+    font-size: 15px;
+    font-weight: 700;
+    color: inherit;
+    text-align: left;
+}
+.music-share-target-item img {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+.music-share-target-cancel {
+    width: 100%;
+    margin-top: 12px;
+    border: 0;
+    border-radius: 16px;
+    padding: 12px;
+    background: rgba(0,0,0,0.07);
+    font-weight: 800;
+    color: inherit;
+}

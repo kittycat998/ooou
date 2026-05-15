@@ -1,6 +1,33 @@
 // --- 世界书功能 (js/modules/worldbook.js) ---
 let pendingWbCategoryDelete = null; // 删除分类弹窗用：{ category, count }
 
+async function waitForWorldBookDbReadyFast() {
+    if (typeof _ovoWaitForDbReady === 'function') {
+        await _ovoWaitForDbReady();
+    }
+}
+
+async function saveWorldBookEntryFast(book) {
+    if (!book || !book.id) return;
+    await waitForWorldBookDbReadyFast();
+    if (typeof dexieDB !== 'undefined' && dexieDB && dexieDB.worldBooks) {
+        await dexieDB.worldBooks.put(book);
+    } else {
+        await saveData();
+    }
+}
+
+async function saveWorldBookEntriesFast(books) {
+    const list = Array.isArray(books) ? books.filter(Boolean) : [];
+    if (list.length === 0) return;
+    await waitForWorldBookDbReadyFast();
+    if (typeof dexieDB !== 'undefined' && dexieDB && dexieDB.worldBooks) {
+        await dexieDB.worldBooks.bulkPut(list);
+    } else {
+        await saveData();
+    }
+}
+
 function enterWorldBookMultiSelectMode(initialId, initialCategory = null) {
     if (isWorldBookMultiSelectMode) return;
     isWorldBookMultiSelectMode = true;
@@ -193,8 +220,7 @@ async function handleImportWorldBookFile(file) {
     }));
 
     db.worldBooks.push(...toAdd);
-    await dexieDB.worldBooks.bulkPut(toAdd);
-    await saveData();
+    await saveWorldBookEntriesFast(toAdd);
     renderWorldBookList();
     showToast(`已导入 ${toAdd.length} 条世界书`);
 }
@@ -352,8 +378,7 @@ async function moveSelectedWorldBooksToCategory(targetCategory) {
     if (movedCount > 0) {
         // 批量更新数据库
         const booksToUpdate = db.worldBooks.filter(wb => idsToMove.includes(wb.id));
-        await dexieDB.worldBooks.bulkPut(booksToUpdate);
-        await saveData();
+        await saveWorldBookEntriesFast(booksToUpdate);
         
         showToast(`已成功将 ${movedCount} 个条目移动到「${targetCategory || '未分类'}」`);
         renderWorldBookList();
@@ -378,8 +403,7 @@ async function toggleSelectedWorldBooks() {
     });
 
     // 批量更新数据库
-    await dexieDB.worldBooks.bulkPut(selectedBooks);
-    await saveData();
+    await saveWorldBookEntriesFast(selectedBooks);
 
     const actionText = newDisabledState ? '停用' : '启用';
     showToast(`已${actionText} ${selectedBooks.length} 个条目`);
@@ -422,29 +446,44 @@ function setupWorldBookApp() {
     
     editWorldBookForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const submitBtn = editWorldBookForm.querySelector('button[type="submit"], .submit-btn, .primary-btn');
         const name = worldBookNameInput.value.trim();
         const content = worldBookContentInput.value.trim();
         const category = document.getElementById('world-book-category').value.trim();
         const position = document.querySelector('input[name="world-book-position"]:checked').value;
         const isGlobal = document.getElementById('world-book-global').checked;
         if (!name || !content) return showToast('名称和内容不能为空');
-        if (currentEditingWorldBookId) {
-            const book = db.worldBooks.find(wb => wb.id === currentEditingWorldBookId);
-            if (book) {
-                book.name = name;
-                book.content = content;
-                book.position = position;
-                book.category = category;
-                book.isGlobal = isGlobal;
-                if (typeof book.disabled === 'undefined') book.disabled = false;
+
+        if (submitBtn) submitBtn.disabled = true;
+        try {
+            let bookToSave = null;
+            if (currentEditingWorldBookId) {
+                const book = db.worldBooks.find(wb => wb.id === currentEditingWorldBookId);
+                if (book) {
+                    book.name = name;
+                    book.content = content;
+                    book.position = position;
+                    book.category = category;
+                    book.isGlobal = isGlobal;
+                    if (typeof book.disabled === 'undefined') book.disabled = false;
+                    bookToSave = book;
+                }
+            } else {
+                bookToSave = {id: `wb_${Date.now()}`, name, content, position, category, isGlobal, disabled: false};
+                db.worldBooks.push(bookToSave);
             }
-        } else {
-            db.worldBooks.push({id: `wb_${Date.now()}`, name, content, position, category, isGlobal, disabled: false});
+            if (bookToSave) {
+                await saveWorldBookEntryFast(bookToSave);
+            }
+            showToast('世界书条目已保存');
+            renderWorldBookList();
+            switchScreen('world-book-screen');
+        } catch (err) {
+            console.error('世界书条目保存失败:', err);
+            showToast('保存失败：' + (err && err.message ? err.message : '未知错误'));
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
         }
-        await saveData();
-        showToast('世界书条目已保存');
-        renderWorldBookList();
-        switchScreen('world-book-screen');
     });
 
     worldBookListContainer.addEventListener('click', e => {
@@ -573,6 +612,7 @@ function setupWorldBookApp() {
             if (!pendingWbCategoryDelete) return;
             const cat = pendingWbCategoryDelete.category;
             const idsToDelete = db.worldBooks.filter(wb => (wb.category || '未分类') === cat).map(wb => wb.id);
+            await waitForWorldBookDbReadyFast();
             await dexieDB.worldBooks.bulkDelete(idsToDelete);
             db.worldBooks = db.worldBooks.filter(wb => (wb.category || '未分类') !== cat);
             db.characters.forEach(char => {
@@ -581,7 +621,8 @@ function setupWorldBookApp() {
             db.groups.forEach(group => {
                 if (group.worldBookIds) group.worldBookIds = group.worldBookIds.filter(id => !idsToDelete.includes(id));
             });
-            await saveData();
+            // 删除条目会同步改角色/群聊绑定关系，这条路径保留全量保存，避免 worldBookIds 引用状态丢失。
+            await saveData('worldbook-delete-category-and-entries');
             renderWorldBookList();
             deleteCategoryModal.classList.remove('visible');
             pendingWbCategoryDelete = null;
@@ -590,10 +631,14 @@ function setupWorldBookApp() {
         deleteCategoryMoveEntriesBtn.addEventListener('click', async () => {
             if (!pendingWbCategoryDelete) return;
             const cat = pendingWbCategoryDelete.category;
+            const changedBooks = [];
             db.worldBooks.forEach(book => {
-                if ((book.category || '未分类') === cat) book.category = '';
+                if ((book.category || '未分类') === cat) {
+                    book.category = '';
+                    changedBooks.push(book);
+                }
             });
-            await saveData();
+            await saveWorldBookEntriesFast(changedBooks);
             renderWorldBookList();
             deleteCategoryModal.classList.remove('visible');
             pendingWbCategoryDelete = null;
@@ -679,7 +724,7 @@ function renderWorldBookList(expandedCategory = null) {
                     db.worldBooks.forEach(book => {
                         if ((book.category || '未分类') === oldCat) book.category = trimmed;
                     });
-                    await saveData();
+                    await saveWorldBookEntriesFast(db.worldBooks.filter(book => (book.category || '未分类') === trimmed));
                     renderWorldBookList();
                     showToast('分类名已修改');
                 });
@@ -738,7 +783,7 @@ function renderWorldBookList(expandedCategory = null) {
                     const b = db.worldBooks.find(wb => wb.id === book.id);
                     if (b) {
                         b.disabled = !b.disabled;
-                        await saveData();
+                        await saveWorldBookEntryFast(b);
                         renderWorldBookList();
                         showToast(b.disabled ? '已停用，该条目不会被读取' : '已启用');
                     }

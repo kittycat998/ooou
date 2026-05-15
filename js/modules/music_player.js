@@ -50,20 +50,36 @@
         return songs.filter(s => s.categoryId === categoryId);
     }
 
+    function splitSongTitleMeta(rawTitle) {
+        const raw = String(rawTitle || '').trim();
+        if (!raw) return { title: '未选择音频', artist: '' };
+        const parts = raw.split(/\s+-\s+/);
+        if (parts.length >= 2) {
+            return { title: parts[0].trim() || raw, artist: parts.slice(1).join(' - ').trim() };
+        }
+        return { title: raw, artist: '' };
+    }
+
     function getCurrentSongInfo() {
         const songs = loadPlaylistSongs();
         const song = songs.find(s => s.id === currentPlayingSongId);
         const titleEl = getEl('music-title');
-        const title = (song && song.title) || (titleEl && titleEl.textContent) || '';
+        const rawTitle = (song && song.title) || (titleEl && titleEl.textContent) || '';
+        const parsed = splitSongTitleMeta(rawTitle);
         return {
             id: currentPlayingSongId || '',
-            title: title || '未选择音频',
+            title: rawTitle || '未选择音频',
+            displayTitle: parsed.title || rawTitle || '未选择音频',
+            artist: (song && (song.artist || song.singer || song.artistName)) || parsed.artist || '',
             categoryId: currentPlayingCategoryId || 'default',
             playMode: playMode || 'single',
             playModeLabel: getPlayModeLabel(),
             isPlaying: !!(audio && audio.src && !audio.paused),
             hasSource: !!(audio && audio.src),
-            src: (song && song.src) || currentSrc || ''
+            src: (song && song.src) || currentSrc || '',
+            lrc: (song && song.lrc) || '',
+            cover: (song && song.cover) || '',
+            duration: audio && isFinite(audio.duration) && audio.duration > 0 ? Math.floor(audio.duration) : 0
         };
     }
 
@@ -305,6 +321,7 @@
         const progress = getEl('music-progress');
         if (isFinite(d) && d > 0) progress.value = t;
         updateLyricsHighlight(t);
+        updateChatMusicFloat();
     }
 
     function updatePlayPauseUI(playing) {
@@ -315,6 +332,51 @@
         if (iconPause) iconPause.style.display = playing ? 'block' : 'none';
         const screen = getEl('music-screen');
         if (screen) screen.classList.toggle('is-playing', playing);
+    }
+
+    function getLyricContextAroundCurrent(preCount, nextCount) {
+        try {
+            const el = getAudio();
+            const currentTime = (el && isFinite(el.currentTime)) ? el.currentTime : 0;
+            const prevN = Math.max(0, Math.min(3, preCount === undefined ? 2 : preCount));
+            const nextN = Math.max(0, Math.min(3, nextCount === undefined ? 2 : nextCount));
+            if (!lyricsData || !lyricsData.length) {
+                return { hasLyrics: false, currentTime: currentTime, lines: [] };
+            }
+
+            let activeIndex = -1;
+            for (let i = lyricsData.length - 1; i >= 0; i--) {
+                if (currentTime >= lyricsData[i].time) {
+                    activeIndex = i;
+                    break;
+                }
+            }
+
+            if (activeIndex < 0) activeIndex = 0;
+
+            const start = Math.max(0, activeIndex - prevN);
+            const end = Math.min(lyricsData.length - 1, activeIndex + nextN);
+            const lines = [];
+            for (let i = start; i <= end; i++) {
+                const item = lyricsData[i];
+                if (!item || !item.text) continue;
+                lines.push({
+                    index: i,
+                    time: item.time,
+                    text: item.text,
+                    isCurrent: i === activeIndex
+                });
+            }
+
+            return {
+                hasLyrics: lines.length > 0,
+                currentTime: currentTime,
+                activeIndex: activeIndex,
+                lines: lines
+            };
+        } catch (_) {
+            return { hasLyrics: false, currentTime: 0, lines: [] };
+        }
     }
 
     function updateLyricsHighlight(currentTime) {
@@ -378,10 +440,11 @@
     }
 
     /** 添加一首歌到播放列表并返回带 id 的项 */
-    function addSongToPlaylist(src, title, categoryId, lrc, cover) {
+    function addSongToPlaylist(src, title, categoryId, lrc, cover, artist) {
         const songs = loadPlaylistSongs();
         const id = 'pl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
-        const item = { id, src, title: title || '未命名', categoryId: categoryId || 'default', lrc: lrc || '', cover: cover || '' };
+        const parsed = splitSongTitleMeta(title || '');
+        const item = { id, src, title: title || '未命名', artist: artist || parsed.artist || '', categoryId: categoryId || 'default', lrc: lrc || '', cover: cover || '' };
         songs.push(item);
         savePlaylistSongs(songs);
         return item;
@@ -465,6 +528,647 @@
     }
 
 
+    // ---------- 聊天页一起听面板状态 ----------
+    const TOGETHER_SESSION_KEY_PREFIX = 'ovo_music_together_session_';
+    const TOGETHER_ENDED_KEY_PREFIX = 'ovo_music_together_ended_';
+
+    function getActivePrivateMusicChat() {
+        try {
+            if (typeof currentChatType === 'undefined' || currentChatType !== 'private') return null;
+            if (typeof currentChatId === 'undefined' || !currentChatId) return null;
+            if (typeof db === 'undefined' || !db || !Array.isArray(db.characters)) return null;
+            return db.characters.find(function (c) { return c && c.id === currentChatId; }) || null;
+        } catch (_) { return null; }
+    }
+
+    function getTogetherSessionKey(chatId) {
+        return TOGETHER_SESSION_KEY_PREFIX + (chatId || 'default');
+    }
+
+    function getTogetherEndedKey(chatId) {
+        return TOGETHER_ENDED_KEY_PREFIX + (chatId || 'default');
+    }
+
+    function isTogetherListeningEnded(chatId) {
+        try { return localStorage.getItem(getTogetherEndedKey(chatId)) === '1'; } catch (_) { return false; }
+    }
+
+    function setTogetherListeningEnded(chatId, ended) {
+        try {
+            if (!chatId) return;
+            if (ended) localStorage.setItem(getTogetherEndedKey(chatId), '1');
+            else localStorage.removeItem(getTogetherEndedKey(chatId));
+        } catch (_) {}
+    }
+
+    function readTogetherSession(chatId) {
+        try {
+            const raw = localStorage.getItem(getTogetherSessionKey(chatId));
+            if (!raw) return null;
+            const session = JSON.parse(raw);
+            if (!session || !session.active || session.chatId !== chatId) return null;
+            return session;
+        } catch (_) { return null; }
+    }
+
+    function writeTogetherSession(session) {
+        try {
+            if (!session || !session.chatId) return;
+            localStorage.setItem(getTogetherSessionKey(session.chatId), JSON.stringify(session));
+        } catch (_) {}
+    }
+
+    function clearTogetherSession(chatId) {
+        try { localStorage.removeItem(getTogetherSessionKey(chatId)); } catch (_) {}
+    }
+
+    function ensureTogetherListeningSession(force) {
+        const chat = getActivePrivateMusicChat();
+        const state = getCurrentSongInfo();
+        if (!chat || !chat.musicControlEnabled || !state || !state.hasSource) return null;
+        if (force) setTogetherListeningEnded(chat.id, false);
+        if (!force && isTogetherListeningEnded(chat.id)) return null;
+        let session = readTogetherSession(chat.id);
+        if (!session) {
+            session = {
+                chatId: chat.id,
+                startedAt: Date.now(),
+                active: true,
+                songId: state.id || '',
+                songTitle: state.title || ''
+            };
+            writeTogetherSession(session);
+        }
+        return session;
+    }
+
+    function markTogetherActiveByUserAction() {
+        const chat = getActivePrivateMusicChat();
+        if (!chat || !chat.musicControlEnabled) return;
+        setTogetherListeningEnded(chat.id, false);
+        ensureTogetherListeningSession(true);
+    }
+
+    function formatTogetherElapsed(startedAt) {
+        const start = Number(startedAt) || Date.now();
+        const diff = Math.max(0, Date.now() - start);
+        const totalMinutes = Math.floor(diff / 60000);
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        if (hours > 0) return hours + '小时' + minutes + '分钟';
+        return minutes + '分钟';
+    }
+
+    function getFloatPeopleInfo() {
+        const chat = getActivePrivateMusicChat();
+        const defaultUserAvatar = 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg';
+        const defaultCharAvatar = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+        if (!chat) {
+            return {
+                charName: '角色',
+                charAvatar: defaultCharAvatar,
+                userName: '我',
+                userAvatar: defaultUserAvatar
+            };
+        }
+        return {
+            // 星归要求：角色侧显示备注名，用户侧显示本名，不使用 myNickname。
+            charName: chat.remarkName || chat.realName || chat.name || '角色',
+            charAvatar: chat.avatar || defaultCharAvatar,
+            userName: chat.myName || '我',
+            userAvatar: chat.myAvatar || defaultUserAvatar
+        };
+    }
+
+    function getCurrentLyricLineText() {
+        try {
+            const ctx = getLyricContextAroundCurrent(1, 1);
+            if (!ctx || !ctx.hasLyrics || !Array.isArray(ctx.lines) || !ctx.lines.length) return '';
+            const current = ctx.lines.find(function (line) { return line && line.isCurrent; }) || ctx.lines[0];
+            return current && current.text ? current.text : '';
+        } catch (_) { return ''; }
+    }
+
+    function getTimeText() {
+        const el = getAudio();
+        const cur = el && isFinite(el.currentTime) ? formatTime(el.currentTime) : '0:00';
+        const dur = el && isFinite(el.duration) && el.duration > 0 ? formatTime(el.duration) : '-:--';
+        return { current: cur, duration: dur };
+    }
+
+    function cyclePlayModeFromFloat() {
+        if (playMode === 'single') playMode = 'order';
+        else if (playMode === 'order') playMode = 'shuffle';
+        else playMode = 'single';
+        try { localStorage.setItem(STORAGE_KEY_PLAY_MODE, playMode); } catch (_) {}
+        const metaEl = getEl('music-meta');
+        if (metaEl) metaEl.textContent = getPlayModeLabel() + ' · 保活';
+        const btnLoopEl = getEl('music-btn-loop');
+        if (btnLoopEl) {
+            var iconSingle = btnLoopEl.querySelector('.loop-icon-single');
+            var iconOrder = btnLoopEl.querySelector('.loop-icon-order');
+            var iconShuffle = btnLoopEl.querySelector('.loop-icon-shuffle');
+            if (iconSingle) iconSingle.style.display = playMode === 'single' ? '' : 'none';
+            if (iconOrder) iconOrder.style.display = playMode === 'order' ? '' : 'none';
+            if (iconShuffle) iconShuffle.style.display = playMode === 'shuffle' ? '' : 'none';
+            btnLoopEl.title = getPlayModeLabel();
+        }
+        if (typeof showToast === 'function') showToast(getPlayModeLabel());
+        updateChatMusicFloat();
+        return getPlayModeLabel();
+    }
+
+    function setMusicBackTargetForFloat() {
+        try {
+            const backBtn = document.querySelector('#music-screen .back-btn');
+            if (!backBtn) return;
+            if (typeof currentChatType !== 'undefined' && currentChatType === 'private' && typeof currentChatId !== 'undefined' && currentChatId) {
+                backBtn.setAttribute('data-target', 'chat-room-screen');
+                backBtn.setAttribute('data-ovo-music-return-chat', '1');
+                if (typeof ovoRememberScreen === 'function') {
+                    try {
+                        // 先把返回目的地写成聊天室，避免从音乐页返回被带回主页。
+                        sessionStorage.setItem('ovo:lastActiveScreen', 'chat-room-screen');
+                        sessionStorage.setItem('ovo:lastChatId', String(currentChatId));
+                        sessionStorage.setItem('ovo:lastChatType', String(currentChatType));
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {}
+    }
+
+    function openMusicScreenFromFloat(openQueue) {
+        if (typeof switchScreen === 'function') {
+            setMusicBackTargetForFloat();
+            switchScreen('music-screen');
+            setTimeout(function () {
+                setMusicBackTargetForFloat();
+                if (typeof onShowMusicScreen === 'function') onShowMusicScreen();
+                if (openQueue && typeof window._ovoOpenMusicQueue === 'function') {
+                    try { window._ovoOpenMusicQueue(); } catch (_) {}
+                }
+            }, 0);
+        }
+    }
+
+    function endTogetherListening(reason) {
+        const chat = getActivePrivateMusicChat();
+        const el = getAudio();
+        if (el && el.src) el.pause();
+        if (chat && chat.id) {
+            clearTogetherSession(chat.id);
+            setTogetherListeningEnded(chat.id, true);
+            if (String(reason || '').indexOf('你') >= 0) {
+                _ovoRecordUserMusicControlEvent('user_end_together');
+            }
+        }
+        try {
+            const wrap = document.getElementById('chat-music-float');
+            if (wrap) {
+                wrap.classList.add('collapsed');
+                wrap.classList.remove('expanded');
+            }
+        } catch (_) {}
+        updateChatMusicFloat();
+        if (typeof showToast === 'function') showToast(reason || '已结束一起听');
+        return { ok: true, state: getCurrentSongInfo(), reason: reason || '已结束一起听' };
+    }
+
+
+    // ---------- WOW v58：歌曲分享卡片（邀请卡 MVP） ----------
+    function buildCurrentMusicShareSong() {
+        const info = getCurrentSongInfo();
+        if (!info || !info.hasSource || !info.src) return null;
+        return {
+            id: info.id || ('share_' + Date.now()),
+            title: info.displayTitle || info.title || '未命名歌曲',
+            rawTitle: info.title || '',
+            artist: info.artist || '',
+            src: info.src || '',
+            lrc: info.lrc || '',
+            cover: info.cover || '',
+            categoryId: info.categoryId || 'default',
+            duration: info.duration || 0
+        };
+    }
+
+    function makeMusicShareId() {
+        return 'music_share_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    }
+
+    function getCharacterDisplayName(character) {
+        return (character && (character.remarkName || character.realName || character.name)) || '对方';
+    }
+
+    function findPrivateCharacterById(id) {
+        try {
+            if (typeof db === 'undefined' || !db || !Array.isArray(db.characters)) return null;
+            return db.characters.find(function (c) { return c && c.id === id; }) || null;
+        } catch (_) { return null; }
+    }
+
+    function findMusicShareMessage(chat, shareId) {
+        if (!chat || !Array.isArray(chat.history) || !shareId) return null;
+        for (let i = chat.history.length - 1; i >= 0; i--) {
+            const msg = chat.history[i];
+            if (msg && msg.type === 'music_share_card' && msg.musicShare && msg.musicShare.shareId === shareId) return msg;
+        }
+        return null;
+    }
+
+    function getLatestPendingUserShare(chat) {
+        const pending = chat && chat.pendingMusicShareInvitation;
+        if (!pending || !pending.shareId || !pending.song) return null;
+        const msg = findMusicShareMessage(chat, pending.shareId);
+        if (!msg || !msg.musicShare || msg.musicShare.status !== 'pending') return null;
+        return pending;
+    }
+
+    function updateMusicShareCardStatus(chat, shareId, status, responseBy) {
+        const msg = findMusicShareMessage(chat, shareId);
+        if (!msg || !msg.musicShare) return false;
+        msg.musicShare.status = status;
+        msg.musicShare.responseBy = responseBy || '';
+        msg.musicShare.respondedAt = Date.now();
+        return true;
+    }
+
+    function playSharedSong(song, options) {
+        if (!song || !song.src) return { ok: false, reason: '歌曲数据不完整', state: getCurrentSongInfo() };
+        const state = _ovoPlaySongByCommand({
+            id: song.id || ('shared_' + Date.now()),
+            src: song.src,
+            title: song.rawTitle || (song.artist ? (song.title + ' - ' + song.artist) : song.title),
+            artist: song.artist || '',
+            lrc: song.lrc || '',
+            cover: song.cover || '',
+            categoryId: song.categoryId || currentPlayingCategoryId || 'default'
+        }, song.categoryId || currentPlayingCategoryId || 'default');
+        if (options && options.markTogether) markTogetherActiveByUserAction();
+        updateChatMusicFloat();
+        return { ok: true, state: state };
+    }
+
+
+    async function fetchLrcForSearchResult(item, api) {
+        if (!item || !item.songId) return '';
+        const source = item.source || 'netease';
+        const sid = item.songId;
+        try {
+            if (api === 'meting1') return await fetchLrcFromMeting('https://api.i-meto.com/meting/api', source, sid);
+            if (api === 'meting2') return await fetchLrcFromMeting('https://meting.qjqq.cn/api.php', source, sid);
+            if (api === 'meting3') return await fetchLrcFromVkeys(source, sid);
+        } catch (_) {}
+        try {
+            const lrc1 = await fetchLrcFromMeting('https://api.i-meto.com/meting/api', source, sid);
+            if (lrc1) return lrc1;
+        } catch (_) {}
+        try {
+            const lrc2 = await fetchLrcFromMeting('https://meting.qjqq.cn/api.php', source, sid);
+            if (lrc2) return lrc2;
+        } catch (_) {}
+        try {
+            const lrc3 = await fetchLrcFromVkeys(source, sid);
+            if (lrc3) return lrc3;
+        } catch (_) {}
+        return '';
+    }
+
+    function normalizeSearchResultForShare(item, api, lrc) {
+        if (!item || !item.playUrl) return null;
+        const title = item.name || item.title || '未命名歌曲';
+        const artist = item.artist || '';
+        const sid = item.songId || ('search_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+        return {
+            id: 'search_' + (item.source || api || 'music') + '_' + String(sid).replace(/[^a-zA-Z0-9_-]/g, '_'),
+            title: title,
+            rawTitle: title,
+            artist: artist,
+            album: item.album || '',
+            src: item.playUrl || '',
+            lrc: lrc || '',
+            cover: item.cover || '',
+            categoryId: 'default',
+            duration: 0,
+            source: item.source || '',
+            platform: item.platform || api || '',
+            keyword: ''
+        };
+    }
+
+    function probeAudioDurationForShare(url, timeoutMs) {
+        return new Promise(function (resolve) {
+            if (!url) {
+                resolve({ ok: false, duration: 0, reason: 'no-url' });
+                return;
+            }
+            let done = false;
+            let audio = null;
+            const finish = function (result) {
+                if (done) return;
+                done = true;
+                try {
+                    if (audio) {
+                        audio.pause();
+                        audio.removeAttribute('src');
+                        audio.load();
+                    }
+                } catch (_) {}
+                resolve(result || { ok: false, duration: 0 });
+            };
+            try {
+                audio = new Audio();
+                audio.preload = 'metadata';
+                audio.crossOrigin = 'anonymous';
+                const timer = setTimeout(function () {
+                    finish({ ok: false, duration: 0, reason: 'timeout' });
+                }, timeoutMs || 2600);
+                audio.addEventListener('loadedmetadata', function () {
+                    clearTimeout(timer);
+                    const d = isFinite(audio.duration) ? audio.duration : 0;
+                    finish({ ok: d > 0, duration: d, reason: d > 0 ? '' : 'no-duration' });
+                }, { once: true });
+                audio.addEventListener('error', function () {
+                    clearTimeout(timer);
+                    finish({ ok: false, duration: 0, reason: 'audio-error' });
+                }, { once: true });
+                audio.src = url;
+                audio.load();
+            } catch (e) {
+                finish({ ok: false, duration: 0, reason: 'probe-error' });
+            }
+        });
+    }
+
+    function scoreSearchShareCandidate(candidate) {
+        let score = 0;
+        if (candidate.song && candidate.song.src) score += 20;
+        if (candidate.song && candidate.song.cover) score += 12;
+        if (candidate.song && candidate.song.artist) score += 8;
+        if (candidate.song && candidate.song.lrc) score += 35;
+        const duration = candidate.duration || 0;
+        if (duration >= 75) score += 28;
+        else if (duration > 0 && duration < 55) score -= 80;
+        else if (duration === 0) score -= 6;
+        if (candidate.probeOk) score += 6;
+        return score;
+    }
+
+    async function searchSongForShare(keyword) {
+        const q = String(keyword || '').trim();
+        if (!q) return { ok: false, reason: '没有搜索关键词' };
+        const providers = [
+            { api: 'meting1', label: 'Meting 1', run: function () { return searchMetingCore('https://api.i-meto.com/meting/api', q); } },
+            { api: 'meting2', label: 'Meting 2', run: function () { return searchMetingCore('https://meting.qjqq.cn/api.php', q); } },
+            { api: 'meting3', label: 'Vkeys', run: function () { return searchVkeysCore('https://api.vkeys.cn/v2/music', q); } }
+        ];
+        const candidates = [];
+        const seen = new Set();
+
+        for (const provider of providers) {
+            try {
+                const list = await provider.run();
+                const usable = Array.isArray(list) ? list.filter(function (x) { return x && x.playUrl; }).slice(0, 6) : [];
+                for (const item of usable) {
+                    const key = String(item.playUrl || '') + '|' + String(item.name || item.title || '') + '|' + String(item.artist || '');
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+
+                    let lrc = '';
+                    try { lrc = await fetchLrcForSearchResult(item, provider.api); } catch (_) {}
+                    const song = normalizeSearchResultForShare(item, provider.api, lrc);
+                    if (!song || !song.src) continue;
+                    song.keyword = q;
+
+                    let probe = { ok: false, duration: 0, reason: 'not-probed' };
+                    try { probe = await probeAudioDurationForShare(song.src, 2400); } catch (_) {}
+                    if (probe && probe.duration) song.duration = Math.floor(probe.duration);
+
+                    const candidate = {
+                        song: song,
+                        api: provider.api,
+                        provider: provider.label,
+                        probeOk: !!(probe && probe.ok),
+                        probeReason: probe && probe.reason,
+                        duration: probe && probe.duration ? probe.duration : 0,
+                        hasLrc: !!song.lrc,
+                        hasCover: !!song.cover,
+                        score: 0
+                    };
+                    candidate.score = scoreSearchShareCandidate(candidate);
+                    candidates.push(candidate);
+
+                    // 已经拿到“有歌词 + 时长正常”的结果就可以提前收手，避免搜索太慢。
+                    if (candidate.hasLrc && candidate.duration >= 75) {
+                        candidates.sort(function (a, b) { return b.score - a.score; });
+                        const bestEarly = candidates[0];
+                        return {
+                            ok: true,
+                            song: bestEarly.song,
+                            api: bestEarly.api,
+                            provider: bestEarly.provider,
+                            quality: {
+                                hasLrc: bestEarly.hasLrc,
+                                hasCover: bestEarly.hasCover,
+                                duration: Math.floor(bestEarly.duration || 0),
+                                probeOk: bestEarly.probeOk,
+                                score: bestEarly.score
+                            }
+                        };
+                    }
+                }
+            } catch (e) {
+                console.warn('[MusicShareSearch] 搜索失败:', provider.api, e);
+            }
+        }
+
+        candidates.sort(function (a, b) { return b.score - a.score; });
+        const good = candidates.find(function (c) {
+            return c && c.song && c.song.src && (c.duration === 0 || c.duration >= 55);
+        }) || candidates[0];
+
+        if (good && good.song && good.song.src && good.score > -40) {
+            return {
+                ok: true,
+                song: good.song,
+                api: good.api,
+                provider: good.provider,
+                quality: {
+                    hasLrc: good.hasLrc,
+                    hasCover: good.hasCover,
+                    duration: Math.floor(good.duration || 0),
+                    probeOk: good.probeOk,
+                    score: good.score
+                }
+            };
+        }
+
+        return { ok: false, reason: '没有找到可用的完整歌曲', keyword: q, candidates: candidates.length };
+    }
+
+    function createMusicShareCardMessage(direction, song, fromName, toName) {
+        const shareId = makeMusicShareId();
+        return {
+            id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9),
+            role: direction === 'user_to_character' ? 'user' : 'assistant',
+            content: '[music-share-card:' + shareId + ']',
+            timestamp: Date.now(),
+            type: 'music_share_card',
+            isContextDisabled: true,
+            musicShare: {
+                shareId: shareId,
+                direction: direction,
+                status: 'pending',
+                song: song,
+                fromName: fromName || '',
+                toName: toName || '',
+                createdAt: Date.now()
+            }
+        };
+    }
+
+    async function shareCurrentSongToCharacter(targetCharId) {
+        const song = buildCurrentMusicShareSong();
+        if (!song) {
+            if (typeof showToast === 'function') showToast('当前没有可分享的歌曲');
+            return false;
+        }
+        const target = findPrivateCharacterById(targetCharId);
+        if (!target) {
+            if (typeof showToast === 'function') showToast('没有找到要分享的角色');
+            return false;
+        }
+        if (!Array.isArray(target.history)) target.history = [];
+        const fromName = target.myName || '你';
+        const toName = getCharacterDisplayName(target);
+        const msg = createMusicShareCardMessage('user_to_character', song, fromName, toName);
+        target.history.push(msg);
+        target.pendingMusicShareInvitation = {
+            shareId: msg.musicShare.shareId,
+            song: song,
+            fromName: fromName,
+            toName: toName,
+            at: Date.now()
+        };
+        if (typeof saveCharacterData === 'function') {
+            await saveCharacterData(target, 'music-share-user-to-character');
+        }
+        if (target.id === currentChatId && currentChatType === 'private') {
+            if (typeof addMessageBubble === 'function') addMessageBubble(msg, target.id, 'private');
+            if (typeof renderMessages === 'function') renderMessages(false, true);
+        }
+        if (typeof renderChatList === 'function') renderChatList();
+        if (typeof showToast === 'function') showToast('已分享给' + toName);
+        return true;
+    }
+
+    function closeMusicShareTargetPicker() {
+        const old = document.getElementById('music-share-target-sheet');
+        if (old) old.remove();
+    }
+
+    function openMusicShareTargetPicker() {
+        const song = buildCurrentMusicShareSong();
+        if (!song) {
+            if (typeof showToast === 'function') showToast('当前没有可分享的歌曲');
+            return;
+        }
+        try { closeMusicShareTargetPicker(); } catch (_) {}
+        const sheet = document.createElement('div');
+        sheet.id = 'music-share-target-sheet';
+        sheet.className = 'music-share-target-sheet';
+        const characters = (typeof db !== 'undefined' && db && Array.isArray(db.characters)) ? db.characters : [];
+        const rows = characters.map(function (c) {
+            const name = getCharacterDisplayName(c);
+            const avatar = c.avatar || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+            return '<button type="button" class="music-share-target-item" data-id="' + String(c.id).replace(/"/g, '&quot;') + '"><img src="' + String(avatar).replace(/"/g, '&quot;') + '"><span>' + String(name).replace(/[&<>]/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]); }) + '</span></button>';
+        }).join('');
+        sheet.innerHTML = '<div class="music-share-target-backdrop"></div><div class="music-share-target-panel"><div class="music-share-target-title">分享歌曲给谁</div><div class="music-share-target-song">' + String(song.title || '当前歌曲').replace(/[&<>]/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]); }) + '</div><div class="music-share-target-list">' + rows + '</div><button type="button" class="music-share-target-cancel">取消</button></div>';
+        document.body.appendChild(sheet);
+        sheet.querySelector('.music-share-target-backdrop').addEventListener('click', closeMusicShareTargetPicker);
+        sheet.querySelector('.music-share-target-cancel').addEventListener('click', closeMusicShareTargetPicker);
+        sheet.querySelectorAll('.music-share-target-item').forEach(function (btn) {
+            btn.addEventListener('click', async function () {
+                const id = btn.getAttribute('data-id');
+                closeMusicShareTargetPicker();
+                try { await shareCurrentSongToCharacter(id); } catch (e) {
+                    console.warn('[MusicShare] 分享失败:', e);
+                    if (typeof showToast === 'function') showToast('分享失败');
+                }
+            });
+        });
+    }
+
+    async function respondToUserMusicShare(chatId, accepted, options) {
+        const chat = findPrivateCharacterById(chatId);
+        if (!chat) return { ok: false, reason: '没有找到角色' };
+        const pending = getLatestPendingUserShare(chat);
+        if (!pending) return { ok: false, reason: '没有待回应的歌曲分享' };
+        updateMusicShareCardStatus(chat, pending.shareId, accepted ? 'accepted' : 'declined', 'character');
+        delete chat.pendingMusicShareInvitation;
+        if (accepted) playSharedSong(pending.song, { markTogether: true });
+        const deferSave = options && options.deferSave;
+        if (!deferSave && typeof saveCharacterData === 'function') await saveCharacterData(chat, accepted ? 'music-share-character-accepted' : 'music-share-character-declined');
+        if (chat.id === currentChatId && currentChatType === 'private' && typeof renderMessages === 'function') renderMessages(false, true);
+        return { ok: true, song: pending.song };
+    }
+
+    async function createCharacterShareSong(chatId, song, options) {
+        const chat = findPrivateCharacterById(chatId);
+        if (!chat) return { ok: false, reason: '没有找到角色' };
+        if (!song || !song.src) return { ok: false, reason: '没有可分享的歌曲' };
+        if (!Array.isArray(chat.history)) chat.history = [];
+        const fromName = getCharacterDisplayName(chat);
+        const toName = chat.myName || '你';
+        const msg = createMusicShareCardMessage('character_to_user', song, fromName, toName);
+        chat.history.push(msg);
+        const deferSave = options && options.deferSave;
+        const reason = (options && options.reason) || 'music-share-character-to-user';
+        if (!deferSave && typeof saveCharacterData === 'function') await saveCharacterData(chat, reason);
+        if (chat.id === currentChatId && currentChatType === 'private') {
+            if (typeof renderMessages === 'function') renderMessages(false, true);
+        }
+        if (typeof renderChatList === 'function') renderChatList();
+        return { ok: true, shareId: msg.musicShare.shareId, song: song };
+    }
+
+    async function createCharacterShareCurrentSong(chatId, options) {
+        const song = buildCurrentMusicShareSong();
+        if (!song) return { ok: false, reason: '当前没有可分享的歌曲' };
+        return createCharacterShareSong(chatId, song, options);
+    }
+
+    async function createCharacterSearchShareSong(chatId, keyword, options) {
+        const q = String(keyword || '').trim();
+        if (!q) return { ok: false, reason: '没有搜索关键词', keyword: q };
+        const found = await searchSongForShare(q);
+        if (!found || !found.ok || !found.song) {
+            return { ok: false, reason: (found && found.reason) || '没有找到相关歌曲', keyword: q };
+        }
+        const result = await createCharacterShareSong(chatId, found.song, Object.assign({}, options || {}, { reason: 'music-share-character-search-to-user' }));
+        result.keyword = q;
+        result.provider = found.provider;
+        result.quality = found.quality || null;
+        return result;
+    }
+
+    async function respondToCharacterMusicShare(shareId, accepted) {
+        const chat = getActivePrivateMusicChat();
+        if (!chat) return { ok: false, reason: '当前不在私聊' };
+        const msg = findMusicShareMessage(chat, shareId);
+        if (!msg || !msg.musicShare || msg.musicShare.direction !== 'character_to_user') return { ok: false, reason: '没有找到分享卡片' };
+        if (msg.musicShare.status !== 'pending') return { ok: false, reason: '这张卡片已经回应过了' };
+        msg.musicShare.status = accepted ? 'accepted' : 'declined';
+        msg.musicShare.responseBy = 'user';
+        msg.musicShare.respondedAt = Date.now();
+        if (accepted) playSharedSong(msg.musicShare.song, { markTogether: true });
+        if (typeof saveCharacterData === 'function') await saveCharacterData(chat, accepted ? 'music-share-user-accepted' : 'music-share-user-declined');
+        if (typeof renderMessages === 'function') renderMessages(false, true);
+        if (typeof showToast === 'function') showToast(accepted ? '已同意一起听' : '已选择先不听');
+        return { ok: true };
+    }
+
+
     // ---------- 聊天页悬浮迷你播放器 ----------
     function setupChatMusicFloat() {
         try {
@@ -476,18 +1180,41 @@
             wrap.className = 'chat-music-float collapsed';
             wrap.innerHTML = `
                 <button type="button" class="chat-music-float-toggle" id="chat-music-float-toggle" title="一起听歌">🎧</button>
-                <div class="chat-music-float-panel" id="chat-music-float-panel">
+                <div class="chat-music-float-panel together-panel" id="chat-music-float-panel">
                     <button type="button" class="chat-music-float-close" id="chat-music-float-close" title="收起">×</button>
                     <button type="button" class="chat-music-float-icon-hide" id="chat-music-float-icon-hide" title="隐藏图标">隐藏</button>
-                    <div class="chat-music-float-info" id="chat-music-float-info">
-                        <span class="chat-music-float-note">♪</span>
-                        <span class="chat-music-float-title" id="chat-music-float-title">未选择音频</span>
+                    <div class="together-head" id="chat-music-float-info">
+                        <div class="together-person">
+                            <div class="together-bubble together-bubble-char">•͈ ₃ •͈</div>
+                            <img class="together-avatar" id="chat-music-char-avatar" alt="角色头像">
+                            <div class="together-name" id="chat-music-char-name">角色</div>
+                        </div>
+                        <button type="button" class="together-link" id="chat-music-end-together" title="结束一起听" aria-label="结束一起听">∞</button>
+                        <div class="together-person">
+                            <div class="together-bubble together-bubble-user">𓆩♡𓆪</div>
+                            <img class="together-avatar" id="chat-music-user-avatar" alt="我的头像">
+                            <div class="together-name" id="chat-music-user-name">我</div>
+                        </div>
                     </div>
-                    <div class="chat-music-float-actions">
-                        <button type="button" class="chat-music-float-btn" id="chat-music-float-prev" title="上一首">⏮</button>
-                        <button type="button" class="chat-music-float-btn chat-music-float-play" id="chat-music-float-play" title="播放/暂停">▶</button>
-                        <button type="button" class="chat-music-float-btn" id="chat-music-float-next" title="下一首">⏭</button>
-                        <button type="button" class="chat-music-float-btn" id="chat-music-float-open" title="打开音乐">↗</button>
+                    <div class="together-distance" id="chat-music-together-distance">相距13.14公里，一起听了0分钟</div>
+                    <div class="together-card">
+                        <div class="together-song-title" id="chat-music-float-title">未选择音频</div>
+                        <div class="together-song-meta" id="chat-music-float-meta">一起听歌</div>
+                        <div class="together-lyric-marquee"><span id="chat-music-float-lyric">暂无歌词</span></div>
+                        <div class="together-progress-row">
+                            <span id="chat-music-float-current">0:00</span>
+                            <div class="together-progress-track"><div class="together-progress-fill" id="chat-music-float-progress"></div></div>
+                            <span id="chat-music-float-duration">-:--</span>
+                        </div>
+                        <div class="chat-music-float-actions together-actions">
+                            <button type="button" class="chat-music-float-btn together-side" id="chat-music-float-list" title="歌曲列表">★</button>
+                            <button type="button" class="chat-music-float-btn together-side" id="chat-music-float-mode" title="播放模式">🔁</button>
+                            <button type="button" class="chat-music-float-btn together-main" id="chat-music-float-prev" title="上一首">◀◀</button>
+                            <button type="button" class="chat-music-float-btn chat-music-float-play together-play" id="chat-music-float-play" title="播放/暂停">▶</button>
+                            <button type="button" class="chat-music-float-btn together-main" id="chat-music-float-next" title="下一首">▶▶</button>
+                            <button type="button" class="chat-music-float-btn together-side" id="chat-music-float-share" title="分享歌曲">◎</button>
+                            <button type="button" class="chat-music-float-btn together-side" id="chat-music-float-open" title="打开音乐">↗</button>
+                        </div>
                     </div>
                 </div>`;
             // WOW v57.6.4：悬浮音乐控件挂到 body 顶层，避免被聊天主题/背景装饰层遮住或拦截点击。
@@ -497,9 +1224,13 @@
             const toggle = document.getElementById('chat-music-float-toggle');
             const close = document.getElementById('chat-music-float-close');
             const hideIcon = document.getElementById('chat-music-float-icon-hide');
+            const listBtn = document.getElementById('chat-music-float-list');
+            const modeBtn = document.getElementById('chat-music-float-mode');
+            const endTogetherBtn = document.getElementById('chat-music-end-together');
             const prev = document.getElementById('chat-music-float-prev');
             const play = document.getElementById('chat-music-float-play');
             const next = document.getElementById('chat-music-float-next');
+            const share = document.getElementById('chat-music-float-share');
             const open = document.getElementById('chat-music-float-open');
 
             const FLOAT_POS_KEY = 'ovo_chat_music_float_pos_v1';
@@ -684,6 +1415,7 @@
             } catch (_) {}
 
             function expand() {
+                ensureTogetherListeningSession();
                 wrap.classList.remove('collapsed');
                 wrap.classList.add('expanded');
                 updateChatMusicFloat();
@@ -724,9 +1456,23 @@
                 collapse();
                 setFloatIconHidden(true);
             });
+            if (listBtn) listBtn.addEventListener('click', function () {
+                openMusicScreenFromFloat(true);
+            });
+            if (modeBtn) modeBtn.addEventListener('click', function () {
+                cyclePlayModeFromFloat();
+            });
+            if (endTogetherBtn) endTogetherBtn.addEventListener('click', function () {
+                endTogetherListening('你结束了一起听');
+                updateChatMusicFloat();
+            });
+            if (share) share.addEventListener('click', function () {
+                openMusicShareTargetPicker();
+            });
             if (prev) prev.addEventListener('click', function () {
                 const res = _ovoMusicPrevByCommand();
                 if (res && res.ok) {
+                    markTogetherActiveByUserAction();
                     _ovoRecordUserMusicControlEvent('user_prev');
                 } else if (typeof showToast === 'function') {
                     showToast((res && res.reason) || '不能切到上一首');
@@ -736,6 +1482,7 @@
             if (next) next.addEventListener('click', function () {
                 const res = _ovoMusicNextByCommand();
                 if (res && res.ok) {
+                    markTogetherActiveByUserAction();
                     _ovoRecordUserMusicControlEvent('user_next');
                 } else if (typeof showToast === 'function') {
                     showToast((res && res.reason) || '不能切到下一首');
@@ -752,6 +1499,7 @@
                 if (el.paused) {
                     try {
                         await el.play();
+                        markTogetherActiveByUserAction();
                         _ovoRecordUserMusicControlEvent('user_play');
                     } catch (e) {
                         if (typeof showToast === 'function') showToast('浏览器拦截了播放，请进音乐页点一下播放');
@@ -763,12 +1511,7 @@
                 updateChatMusicFloat();
             });
             if (open) open.addEventListener('click', function () {
-                if (typeof switchScreen === 'function') {
-                    switchScreen('music-screen');
-                    setTimeout(function () {
-                        if (typeof onShowMusicScreen === 'function') onShowMusicScreen();
-                    }, 0);
-                }
+                openMusicScreenFromFloat(false);
             });
             updateChatMusicFloat();
         } catch (e) {
@@ -781,21 +1524,64 @@
             const wrap = document.getElementById('chat-music-float');
             if (!wrap) return;
             const titleEl = document.getElementById('chat-music-float-title');
+            const metaEl = document.getElementById('chat-music-float-meta');
+            const lyricEl = document.getElementById('chat-music-float-lyric');
             const playBtn = document.getElementById('chat-music-float-play');
             const prevBtn = document.getElementById('chat-music-float-prev');
             const nextBtn = document.getElementById('chat-music-float-next');
+            const modeBtn = document.getElementById('chat-music-float-mode');
+            const progressFill = document.getElementById('chat-music-float-progress');
+            const currentTimeEl = document.getElementById('chat-music-float-current');
+            const durationEl = document.getElementById('chat-music-float-duration');
+            const distanceEl = document.getElementById('chat-music-together-distance');
+            const charAvatarEl = document.getElementById('chat-music-char-avatar');
+            const userAvatarEl = document.getElementById('chat-music-user-avatar');
+            const charNameEl = document.getElementById('chat-music-char-name');
+            const userNameEl = document.getElementById('chat-music-user-name');
+
             const state = getCurrentSongInfo();
             const title = state && state.hasSource ? (state.title || '当前音频') : '未选择音频';
             if (titleEl) titleEl.textContent = title;
-            if (playBtn) playBtn.textContent = state && state.isPlaying ? '⏸' : '▶';
+            if (metaEl) metaEl.textContent = state && state.hasSource ? ((state.playModeLabel || getPlayModeLabel()) + ' · 一起听') : '还没有选择歌曲';
+            if (playBtn) playBtn.textContent = state && state.isPlaying ? 'Ⅱ' : '▶';
             wrap.classList.toggle('is-playing', !!(state && state.isPlaying));
             wrap.classList.toggle('is-empty', !(state && state.hasSource));
+
+            const people = getFloatPeopleInfo();
+            if (charAvatarEl) charAvatarEl.src = people.charAvatar;
+            if (userAvatarEl) userAvatarEl.src = people.userAvatar;
+            if (charNameEl) charNameEl.textContent = people.charName;
+            if (userNameEl) userNameEl.textContent = people.userName;
+
+            let session = null;
+            const chat = getActivePrivateMusicChat();
+            if (chat && state && state.hasSource) session = readTogetherSession(chat.id) || ensureTogetherListeningSession(false);
+            if (distanceEl) {
+                const elapsed = session && session.startedAt ? formatTogetherElapsed(session.startedAt) : '0分钟';
+                distanceEl.textContent = '相距13.14公里，一起听了' + elapsed;
+            }
+
+            const time = getTimeText();
+            if (currentTimeEl) currentTimeEl.textContent = time.current;
+            if (durationEl) durationEl.textContent = time.duration;
+            const el = getAudio();
+            const pct = el && isFinite(el.duration) && el.duration > 0 ? Math.max(0, Math.min(100, (el.currentTime / el.duration) * 100)) : 0;
+            if (progressFill) progressFill.style.width = pct + '%';
+
+            const lyricText = getCurrentLyricLineText();
+            if (lyricEl) lyricEl.textContent = lyricText || '暂无歌词';
+
+            const modeIcon = playMode === 'shuffle' ? '🔀' : (playMode === 'order' ? '↦' : '🔂');
+            if (modeBtn) {
+                modeBtn.textContent = modeIcon;
+                modeBtn.title = getPlayModeLabel();
+            }
 
             const songs = loadPlaylistSongs();
             const list = getSongsInCategory(songs, currentPlayingCategoryId);
             const idx = list.findIndex(function (s) { return s.id === currentPlayingSongId; });
             if (prevBtn) prevBtn.disabled = idx <= 0;
-            if (nextBtn) nextBtn.disabled = idx < 0 || idx >= list.length - 1;
+            if (nextBtn) nextBtn.disabled = idx < 0 || (playMode === 'order' && idx >= list.length - 1);
         } catch (_) {}
     }
 
@@ -1315,7 +2101,7 @@
                             }
                         }
                         var title = it.name + ' - ' + it.artist;
-                        var added = addSongToPlaylist(it.playUrl, title, 'default', lrc, it.cover || '');
+                        var added = addSongToPlaylist(it.playUrl, title, 'default', lrc, it.cover || '', it.artist || '');
                         currentPlayingSongId = added.id;
                         currentPlayingCategoryId = 'default';
                         setSource(it.playUrl, title, { id: added.id, lrc: lrc, cover: it.cover || '' });
@@ -1432,7 +2218,7 @@
                         if (!lrc) { try { lrc = await fetchLrcFromMeting('https://meting.qjqq.cn/api.php', it.source, sid); } catch (_) {} }
                     }
                     var title = it.name + ' - ' + it.artist;
-                    addSongToPlaylist(it.playUrl, title, 'default', lrc, it.cover || '');
+                    addSongToPlaylist(it.playUrl, title, 'default', lrc, it.cover || '', it.artist || '');
                     successCount++;
                     if (lrc) lrcCount++;
                 }
@@ -1840,6 +2626,7 @@
             if (queueEmptyEl) queueEmptyEl.style.display = list.length === 0 ? 'block' : 'none';
         }
 
+        window._ovoOpenMusicQueue = openQueuePanel;
         if (getEl('music-btn-queue')) {
             getEl('music-btn-queue').addEventListener('click', openQueuePanel);
         }
@@ -2155,6 +2942,28 @@
         if (!song) return getCurrentSongInfo();
         currentPlayingSongId = song.id;
         currentPlayingCategoryId = categoryId || song.categoryId || currentPlayingCategoryId || 'default';
+        // 分享歌曲可能来自卡片，不一定已在歌单里；若不存在则补入，确保封面/歌手后续能被 getCurrentSongInfo 读到。
+        try {
+            const songs = loadPlaylistSongs();
+            const exists = songs.find(function (s) { return s.id === song.id; });
+            if (!exists && song.src) {
+                songs.push({
+                    id: song.id,
+                    src: song.src,
+                    title: song.title || '未命名歌曲',
+                    artist: song.artist || '',
+                    categoryId: currentPlayingCategoryId || 'default',
+                    lrc: song.lrc || '',
+                    cover: song.cover || ''
+                });
+                savePlaylistSongs(songs);
+            } else if (exists) {
+                if (song.artist && !exists.artist) exists.artist = song.artist;
+                if (song.cover && !exists.cover) exists.cover = song.cover;
+                if (song.lrc && !exists.lrc) exists.lrc = song.lrc;
+                savePlaylistSongs(songs);
+            }
+        } catch (_) {}
         setSource(song.src, song.title, { id: song.id, lrc: song.lrc, cover: song.cover });
         getAudio().play().catch(function () {});
         return getCurrentSongInfo();
@@ -2212,13 +3021,48 @@
         }
     }
 
+    function getTogetherListeningStateForPrompt() {
+        const chat = getActivePrivateMusicChat();
+        if (!chat || !chat.musicControlEnabled) return null;
+        const session = readTogetherSession(chat.id);
+        if (!session || !session.active) return null;
+        return {
+            active: true,
+            chatId: chat.id,
+            startedAt: session.startedAt || 0,
+            elapsedText: formatTogetherElapsed(session.startedAt),
+            songTitle: session.songTitle || (getCurrentSongInfo().title || '')
+        };
+    }
+
     window.OVOMusicControl = {
         getState: getCurrentSongInfo,
+        getLyricContext: getLyricContextAroundCurrent,
+        getTogetherState: getTogetherListeningStateForPrompt,
         next: _ovoMusicNextByCommand,
         prev: _ovoMusicPrevByCommand,
         pause: _ovoMusicPauseByCommand,
         play: _ovoMusicPlayByCommand,
+        cycleMode: function () { return { ok: true, label: cyclePlayModeFromFloat(), state: getCurrentSongInfo() }; },
+        endTogether: function (reason) { return endTogetherListening(reason); },
+        playSharedSong: function (song) { return playSharedSong(song, { markTogether: true }); },
+        shareCurrentToCharacter: shareCurrentSongToCharacter,
+        createCharacterShareCurrent: createCharacterShareCurrentSong,
+        searchAndShareSong: createCharacterSearchShareSong,
+        searchSongForShare: searchSongForShare,
+        respondToUserShare: respondToUserMusicShare,
+        respondToCharacterShare: respondToCharacterMusicShare,
         updateFloat: updateChatMusicFloat
+    };
+
+    window.OVOMusicShare = {
+        shareCurrentToCharacter: shareCurrentSongToCharacter,
+        createCharacterShareCurrent: createCharacterShareCurrentSong,
+        searchAndShareSong: createCharacterSearchShareSong,
+        searchSongForShare: searchSongForShare,
+        respondToUserShare: respondToUserMusicShare,
+        respondToCharacterShare: respondToCharacterMusicShare,
+        openTargetPicker: openMusicShareTargetPicker
     };
 
     window.initMusicPlayer = initMusicPlayer;

@@ -41,14 +41,38 @@
         return String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
     }
 
+    function getOngoingEndDate(startDate) {
+        const todayKey = toDateKey(new Date());
+        if (!startDate) return todayKey;
+        return startDate <= todayKey ? todayKey : startDate;
+    }
+
+    function getRecordDisplayEnd(record) {
+        if (!record) return '';
+        return record.endDate || getOngoingEndDate(record.startDate);
+    }
+
+    function isOngoingRecord(record) {
+        return !!(record && record.startDate && !record.endDate);
+    }
+
+    async function saveCalendarDataOnly() {
+        if (typeof saveGlobalSetting === 'function') {
+            await saveGlobalSetting('calendarData');
+        } else {
+            await saveData();
+        }
+    }
+
     function getRecords() {
         ensureCalendarData();
         return db.calendarData.periodRecords
             .filter(r => r && r.startDate)
             .map(r => ({
                 startDate: r.startDate,
-                endDate: r.endDate || r.startDate,
-                createdAt: r.createdAt || 0
+                endDate: r.endDate || '',
+                createdAt: r.createdAt || 0,
+                updatedAt: r.updatedAt || 0
             }))
             .sort((a,b) => String(a.startDate).localeCompare(String(b.startDate)));
     }
@@ -88,7 +112,7 @@
 
     function getDayType(key) {
         const records = getRecords();
-        if (records.some(r => isInRange(key, r.startDate, r.endDate))) return 'period';
+        if (records.some(r => isInRange(key, r.startDate, getRecordDisplayEnd(r)))) return 'period';
         const p = getPrediction();
         if (p) {
             if (isInRange(key, p.nextStart, p.nextEnd)) return 'predicted-period';
@@ -135,7 +159,7 @@
                 const endInput = document.getElementById('calendar-period-end');
                 formOverrideDate = selectedDate;
                 if (startInput) startInput.value = selectedDate;
-                if (endInput) endInput.value = selectedDate;
+                if (endInput) endInput.value = '';
                 renderCalendarScreen();
             });
         });
@@ -156,11 +180,11 @@
 
         if (formOverrideDate) {
             if (startInput) startInput.value = formOverrideDate;
-            if (endInput) endInput.value = formOverrideDate;
+            if (endInput) endInput.value = '';
             formOverrideDate = '';
         } else if (latest) {
             if (startInput) startInput.value = latest.startDate || '';
-            if (endInput) endInput.value = latest.endDate || latest.startDate || '';
+            if (endInput) endInput.value = latest.endDate || '';
         } else {
             if (startInput && !startInput.value) startInput.value = selectedDate || toDateKey(new Date());
             if (endInput && !endInput.value) endInput.value = '';
@@ -175,9 +199,9 @@
         let currentState = '暂无经期记录';
         if (latest) {
             const todayKey = toDateKey(new Date());
-            if (isInRange(todayKey, latest.startDate, latest.endDate)) {
+            if (isInRange(todayKey, latest.startDate, getRecordDisplayEnd(latest))) {
                 const day = diffDays(new Date(), parseDate(latest.startDate)) + 1;
-                currentState = `经期第 ${day} 天`;
+                currentState = isOngoingRecord(latest) ? `经期第 ${day} 天（进行中）` : `经期第 ${day} 天`;
             } else if (p) {
                 const daysToNext = diffDays(parseDate(p.nextStart), new Date());
                 if (daysToNext >= 0) currentState = `距下次预计经期 ${daysToNext} 天`;
@@ -185,7 +209,7 @@
         }
         el.innerHTML = `
             <div class="calendar-summary-item"><div class="calendar-summary-label">当前状态</div><div class="calendar-summary-value">${escapeHtml(currentState)}</div></div>
-            <div class="calendar-summary-item"><div class="calendar-summary-label">最近经期</div><div class="calendar-summary-value">${latest ? `${fmt(latest.startDate)} 至 ${fmt(latest.endDate)}` : '未记录'}</div></div>
+            <div class="calendar-summary-item"><div class="calendar-summary-label">最近经期</div><div class="calendar-summary-value">${latest ? `${fmt(latest.startDate)} 至 ${isOngoingRecord(latest) ? '进行中' : fmt(latest.endDate)}` : '未记录'}</div></div>
             <div class="calendar-summary-item"><div class="calendar-summary-label">下次预计经期</div><div class="calendar-summary-value">${p ? `${fmt(p.nextStart)} 至 ${fmt(p.nextEnd)}` : '记录后生成'}</div></div>
             <div class="calendar-summary-item"><div class="calendar-summary-label">预计排卵/易孕期</div><div class="calendar-summary-value">${p ? `${fmt(p.ovulation)}；${fmt(p.fertileStart)} 至 ${fmt(p.fertileEnd)}` : '记录后生成'}</div></div>
         `;
@@ -194,14 +218,14 @@
     async function savePeriodRecord() {
         ensureCalendarData();
         const start = document.getElementById('calendar-period-start')?.value || '';
-        let end = document.getElementById('calendar-period-end')?.value || start;
+        let end = document.getElementById('calendar-period-end')?.value || '';
         const cycle = parseInt(document.getElementById('calendar-cycle-length')?.value, 10);
         const len = parseInt(document.getElementById('calendar-period-length')?.value, 10);
         if (!start) {
             showToast('先选经期开始日期');
             return;
         }
-        if (end < start) end = start;
+        if (end && end < start) end = start;
         db.calendarData.cycleLength = (!isNaN(cycle) && cycle >= 15 && cycle <= 60) ? cycle : 28;
         db.calendarData.periodLength = (!isNaN(len) && len >= 1 && len <= 15) ? len : 5;
 
@@ -214,8 +238,8 @@
         }
         selectedDate = start;
         db.calendarData.selectedDate = selectedDate;
-        await saveData();
-        showToast('经期记录已保存');
+        await saveCalendarDataOnly();
+        showToast(end ? '经期记录已保存' : '经期开始已记录，结束日期可以之后补');
         renderCalendarScreen();
     }
 
@@ -228,7 +252,7 @@
         }
         const last = records[records.length-1];
         db.calendarData.periodRecords = db.calendarData.periodRecords.filter(r => r.startDate !== last.startDate);
-        await saveData();
+        await saveCalendarDataOnly();
         showToast('已删除最近一次经期记录');
         renderCalendarScreen();
     }

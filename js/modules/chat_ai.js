@@ -760,12 +760,30 @@ function _ovoGetMusicStateForPrompt() {
     return null;
 }
 
+function _ovoGetMusicLyricContextForPrompt() {
+    try {
+        if (typeof window !== 'undefined' && window.OVOMusicControl && typeof window.OVOMusicControl.getLyricContext === 'function') {
+            return window.OVOMusicControl.getLyricContext(2, 2);
+        }
+    } catch (_) {}
+    return null;
+}
+
+function _ovoGetMusicTogetherStateForPrompt() {
+    try {
+        if (typeof window !== 'undefined' && window.OVOMusicControl && typeof window.OVOMusicControl.getTogetherState === 'function') {
+            return window.OVOMusicControl.getTogetherState();
+        }
+    } catch (_) {}
+    return null;
+}
+
 async function executeMusicControlCommands(responseText, chat, targetChatId, targetChatType) {
     if (targetChatType !== 'private' || !chat || !chat.musicControlEnabled || !responseText) {
         return { cleaned: responseText, executed: false };
     }
 
-    const regex = /\[(MUSIC_NEXT|MUSIC_PREV|MUSIC_PAUSE|MUSIC_PLAY)\]/g;
+    const regex = /\[(MUSIC_NEXT|MUSIC_PREV|MUSIC_PAUSE|MUSIC_PLAY|END_TOGETHER_LISTENING)\]/g;
     let cleaned = responseText;
     const commands = [];
     let match;
@@ -801,7 +819,11 @@ async function executeMusicControlCommands(responseText, chat, targetChatId, tar
         let result = null;
         let displayText = '';
 
-        if (cmd === 'MUSIC_NEXT' && typeof control.next === 'function') {
+        if (cmd === 'END_TOGETHER_LISTENING' && typeof control.endTogether === 'function') {
+            result = await control.endTogether('角色结束了一起听');
+            if (result && result.ok) displayText = `${displayName}结束了和你的一起听`;
+            else displayText = `${displayName}想结束一起听，但${(result && result.reason) || '当前无法结束'}`;
+        } else if (cmd === 'MUSIC_NEXT' && typeof control.next === 'function') {
             result = await control.next();
             if (result && result.ok) displayText = `${displayName}切歌：${_ovoFormatMusicStateForDisplay(result.state)}`;
             else displayText = `${displayName}想切下一首，但${(result && result.reason) || '当前无法切歌'}`;
@@ -834,6 +856,74 @@ async function executeMusicControlCommands(responseText, chat, targetChatId, tar
     }
 
     if (typeof renderChatList === 'function') renderChatList();
+
+    return { cleaned, executed };
+}
+
+
+async function executeMusicShareCommands(responseText, chat, targetChatId, targetChatType) {
+    if (targetChatType !== 'private' || !chat || !chat.musicControlEnabled || !responseText) {
+        return { cleaned: responseText, executed: false };
+    }
+
+    const regex = /\[(ACCEPT_SHARED_SONG|DECLINE_SHARED_SONG|SHARE_CURRENT_SONG|SEARCH_AND_SHARE_SONG)(?:[:：]([^\]]+?))?\]/g;
+    let cleaned = responseText;
+    const commands = [];
+    let match;
+    while ((match = regex.exec(responseText)) !== null) {
+        commands.push({ cmd: match[1], arg: (match[2] || '').trim() });
+        if (commands.length >= 2) break;
+    }
+    cleaned = cleaned.replace(regex, '').replace(/\n{3,}/g, '\n\n').trim();
+
+    if (!commands.length) return { cleaned, executed: false };
+
+    if (typeof window !== 'undefined' && typeof window.initMusicPlayer === 'function') {
+        try { window.initMusicPlayer(); } catch (_) {}
+    }
+    const share = (typeof window !== 'undefined') ? window.OVOMusicShare : null;
+    if (!share) return { cleaned, executed: false };
+
+    const character = db.characters.find(c => c.id === targetChatId);
+    if (!character) return { cleaned, executed: false };
+
+    function addMusicShareSystemDisplay(text) {
+        if (!text) return;
+        if (!Array.isArray(character.history)) character.history = [];
+        character.history.push({
+            id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+            role: 'assistant',
+            content: `[system-display:${text}]`,
+            timestamp: Date.now(),
+            isContextDisabled: false
+        });
+    }
+
+    let executed = false;
+    for (const item of commands) {
+        const cmd = item.cmd;
+        let result = null;
+        if (cmd === 'ACCEPT_SHARED_SONG' && typeof share.respondToUserShare === 'function') {
+            result = await share.respondToUserShare(targetChatId, true, { deferSave: true });
+            executed = !!(result && result.ok) || executed;
+        } else if (cmd === 'DECLINE_SHARED_SONG' && typeof share.respondToUserShare === 'function') {
+            result = await share.respondToUserShare(targetChatId, false, { deferSave: true });
+            executed = !!(result && result.ok) || executed;
+        } else if (cmd === 'SHARE_CURRENT_SONG' && typeof share.createCharacterShareCurrent === 'function') {
+            result = await share.createCharacterShareCurrent(targetChatId, { deferSave: true });
+            executed = !!(result && result.ok) || executed;
+        } else if (cmd === 'SEARCH_AND_SHARE_SONG' && typeof share.searchAndShareSong === 'function') {
+            const keyword = item.arg;
+            result = await share.searchAndShareSong(targetChatId, keyword, { deferSave: true });
+            if (result && result.ok) {
+                executed = true;
+            } else {
+                const q = keyword || '这首歌';
+                addMusicShareSystemDisplay(`没有找到“${q}”可用的完整歌曲`);
+                executed = true;
+            }
+        }
+    }
 
     return { cleaned, executed };
 }
@@ -1034,9 +1124,13 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             }
         }
 
-        // 1.6.5 一起听歌：识别 [MUSIC_NEXT]/[MUSIC_PREV]/[MUSIC_PAUSE]/[MUSIC_PLAY]，执行后从展示内容中移除
+        // 1.6.5 一起听歌：识别 [MUSIC_NEXT]/[MUSIC_PREV]/[MUSIC_PAUSE]/[MUSIC_PLAY]/[END_TOGETHER_LISTENING]，执行后从展示内容中移除
         const musicControlResult = await executeMusicControlCommands(fullResponse, chat, targetChatId, targetChatType);
         fullResponse = musicControlResult.cleaned;
+
+        // 1.6.6 歌曲分享卡片：识别 [ACCEPT_SHARED_SONG]/[DECLINE_SHARED_SONG]/[SHARE_CURRENT_SONG]，执行后从展示内容中移除
+        const musicShareResult = await executeMusicShareCommands(fullResponse, chat, targetChatId, targetChatType);
+        fullResponse = musicShareResult.cleaned;
 
         // 1.7 角色自行修改备注：识别 [CHANGE_REMARK_NAME:新备注]，执行后从展示内容中移除
         const changeRemarkResult = await executeChangeRemarkNameCommand(fullResponse, chat, targetChatId, targetChatType);
@@ -2163,7 +2257,22 @@ function generatePrivateSystemPrompt(character, opts) {
     if (character.musicControlEnabled) {
         const musicState = _ovoGetMusicStateForPrompt();
         if (musicState && musicState.hasSource) {
-            prompt += `\n<current_music_state>\n当前正在一起听歌/音乐播放器状态：歌曲《${musicState.title || '未知歌曲'}》；状态：${musicState.isPlaying ? '播放中' : '暂停中'}；播放模式：${musicState.playModeLabel || musicState.playMode || '未知'}。你可以自然感知当前正在听的歌，但不要机械播报。\n</current_music_state>\n`;
+            const togetherState = _ovoGetMusicTogetherStateForPrompt();
+            prompt += `\n<current_music_state>\n当前音乐播放器状态：歌曲《${musicState.title || '未知歌曲'}》；状态：${musicState.isPlaying ? '播放中' : '暂停中'}；播放模式：${musicState.playModeLabel || musicState.playMode || '未知'}。你可以自然感知当前音乐状态，但不要机械播报。\n</current_music_state>\n`;
+            if (togetherState && togetherState.active && togetherState.elapsedText) {
+                prompt += `\n<together_listening_state>\n你们正在一起听歌，已经一起听了${togetherState.elapsedText}。这是真实的一起听持续时间，可以自然感知，但不要机械播报。\n</together_listening_state>\n`;
+            }
+
+            const lyricContext = _ovoGetMusicLyricContextForPrompt();
+            if (lyricContext && lyricContext.hasLyrics && Array.isArray(lyricContext.lines) && lyricContext.lines.length) {
+                const lyricLines = lyricContext.lines
+                    .slice(0, 5)
+                    .map(line => `${line.isCurrent ? '当前句' : '附近句'}：${line.text}`)
+                    .join('\n');
+                if (lyricLines) {
+                    prompt += `\n<current_lyric_context>\n当前播放进度附近的歌词如下，只用于帮助你感知此刻一起听歌的氛围，不要机械逐句解读，不要说自己看到了系统提示。\n${lyricLines}\n</current_lyric_context>\n`;
+                }
+            }
         } else {
             prompt += `\n<current_music_state>\n当前音乐播放器没有正在播放的歌曲。\n</current_music_state>\n`;
         }
@@ -2177,12 +2286,20 @@ function generatePrivateSystemPrompt(character, opts) {
                 user_prev: `用户刚刚把音乐切回了《${title}》。`,
                 user_pause: `用户刚刚暂停了音乐。`,
                 user_play: `用户刚刚继续播放音乐：《${title}》。`,
-                user_select: `用户刚刚主动选择播放了《${title}》。`
+                user_select: `用户刚刚主动选择播放了《${title}》。`,
+                user_end_together: `用户刚刚结束了这次一起听，音乐已经停止。你可以自然回应这件事，但不要再重复执行结束一起听指令。`
             };
             const line = eventLabels[ev.type] || `用户刚刚操作了音乐播放器，当前歌曲是《${title}》。`;
             prompt += `\n<user_music_control_event>\n${line}你可以根据当前关系和气氛自然反应，不要说自己看到了系统提示。\n</user_music_control_event>\n`;
         }
-        prompt += `\n【一起听歌控制规则】\n你可以在当前气氛合适时控制音乐播放器。唯一有效格式：\n[MUSIC_NEXT] 下一首\n[MUSIC_PREV] 上一首\n[MUSIC_PAUSE] 暂停\n[MUSIC_PLAY] 继续播放\n规则：只在真的符合当前气氛时使用，不要频繁使用；指令会被系统自动执行并隐藏，聊天界面只显示系统提示。\n`;
+        if (character.pendingMusicShareInvitation && character.pendingMusicShareInvitation.song) {
+            const inv = character.pendingMusicShareInvitation;
+            const song = inv.song || {};
+            const title = song.title || song.rawTitle || '这首歌';
+            const artist = song.artist ? ` - ${song.artist}` : '';
+            prompt += `\n<shared_song_invitation>\n用户刚刚分享了一首歌给你：《${title}》${artist}。\n如果你想接住这首歌、和用户一起听，请在回复中输出 [ACCEPT_SHARED_SONG]。如果你现在不想听，请输出 [DECLINE_SHARED_SONG]。指令会被系统隐藏，歌曲分享卡片会直接更新为你的回应状态。你可以同时用正常语言自然回应，不要说自己看到了系统提示。\n</shared_song_invitation>\n`;
+        }
+        prompt += `\n【一起听歌控制规则】\n你可以在当前气氛合适时控制音乐播放器。唯一有效格式：\n[MUSIC_NEXT] 下一首\n[MUSIC_PREV] 上一首\n[MUSIC_PAUSE] 暂停\n[MUSIC_PLAY] 继续播放\n[END_TOGETHER_LISTENING] 结束这次一起听（会真正停止音乐）\n[SHARE_CURRENT_SONG] 把当前正在播放的歌曲分享给用户，由用户点击同意或先不听\n[SEARCH_AND_SHARE_SONG:关键词] 搜索一首歌并分享给用户，由用户点击同意后才会播放；搜不到时系统会显示小灰条\n规则：只在真的符合当前气氛时使用，不要频繁使用；搜索关键词尽量写清楚歌名/歌手；指令会被系统自动执行并隐藏，聊天界面只显示系统提示或分享卡片。\n`;
     }
 
     if (character.characterRemarkAwareEnabled && character.pendingUserRemarkChange) {
