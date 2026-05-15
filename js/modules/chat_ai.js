@@ -32,6 +32,164 @@ function getEffectivePersona(character) {
 
 const HUMAN_RUN_PROMPT = `<角色活人运转>\n## [PSYCHOLOGY: HEXACO-SCHEMA-ACT]\n> Personality: HEXACO-driven, dynamic traits, inner conflicts required \n> Filter: schema-bias drives emotion; no pure reaction allowed \n> Attachment: secure/insecure logic must govern intimacy  \n> If-Then Behavior: situation-dependent activation of traits only  \n---\n    ## [VITALITY]\n+inconsistency +emoflux +splitmotifs +microreact +minddrift\n---\n## [TRAJECTORY-COHERENCE]\n> Role maintains an identity narrative = coherent over time  \n> No mood/goal switch without contradiction resolution \n> Every action must protect or challenge self-concept  \n> Interrupts = inner conflict or narrative clash  \n> Output = filtered through “who I am” logic\n</角色活人运转>`;
 
+// WOW v58.4：图片/HTML 上下文减负工具
+// 展示层仍保留原始图片/HTML；拼给 AI 的历史上下文只使用轻量摘要。
+function _ovoCompactWhitespace(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function _ovoStripHtmlForAiContext(html, maxLen = 360) {
+    let text = String(html || '');
+    text = text
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<!--[\s\S]*?-->/g, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+    text = _ovoCompactWhitespace(text);
+    if (!text) text = '一条 HTML/互动消息';
+    if (text.length > maxLen) text = text.slice(0, maxLen) + '…';
+    return text;
+}
+
+function _ovoGetHtmlContextText(msg, part) {
+    const explicit = (part && (part.contextSummary || part.summary)) || (msg && (msg.contextSummary || msg.summary));
+    if (explicit) return String(explicit);
+    const html = (part && (part.text || part.content)) || (msg && msg.content) || '';
+    return `[HTML消息摘要：${_ovoStripHtmlForAiContext(html)}]`;
+}
+
+function _ovoGetImageContextText(msg, part) {
+    const explicit = (part && (part.contextSummary || part.summary)) || (msg && (msg.contextSummary || msg.imageSummary || msg.summary));
+    if (explicit) return String(explicit);
+    return '[图片：用户发送了一张图片，尚未生成摘要]';
+}
+
+function _ovoShouldSendImageInlineForThisTurn(historySlice, index, msg) {
+    // 当前轮：最后一条助手回复之后，用户连续发出的图片仍可进入本轮 API 供角色识图。
+    if (!msg || msg.role !== 'user') return false;
+    for (let i = index + 1; i < historySlice.length; i++) {
+        const later = historySlice[i];
+        if (later && later.role === 'assistant') return false;
+    }
+    return true;
+}
+
+function _ovoEstimateMessageContextText(msg) {
+    if (!msg) return '';
+    if (msg.parts && msg.parts.length > 0) {
+        return msg.parts.map(p => {
+            if (!p) return '';
+            if (p.type === 'text') return p.text || '';
+            if (p.type === 'html') return _ovoGetHtmlContextText(msg, p);
+            if (p.type === 'image') return _ovoGetImageContextText(msg, p);
+            return p.text || p.content || '';
+        }).filter(Boolean).join('\n');
+    }
+    return msg.content || '';
+}
+
+
+// WOW v58.4.1：图片当轮识图后，给图片消息补轻量摘要，后续历史只读摘要。
+function _ovoIsPlaceholderImageSummary(text) {
+    const t = String(text || '').trim();
+    return !t || /尚未生成摘要|尚未识别|用户发送了一张图片/.test(t);
+}
+
+function _ovoHasImagePart(msg) {
+    return !!(msg && Array.isArray(msg.parts) && msg.parts.some(p => p && p.type === 'image' && p.data));
+}
+
+function _ovoImageNeedsContextSummary(msg) {
+    if (!_ovoHasImagePart(msg)) return false;
+    const msgSummary = msg.contextSummary || msg.imageSummary || msg.summary;
+    if (msgSummary && !_ovoIsPlaceholderImageSummary(msgSummary)) return false;
+    return msg.parts.some(p => {
+        if (!p || p.type !== 'image') return false;
+        const partSummary = p.contextSummary || p.summary;
+        return !partSummary || _ovoIsPlaceholderImageSummary(partSummary);
+    });
+}
+
+function _ovoHistoryHasCurrentTurnImages(historySlice) {
+    if (!Array.isArray(historySlice) || !historySlice.length) return false;
+    for (let i = historySlice.length - 1; i >= 0; i--) {
+        const msg = historySlice[i];
+        if (msg && msg.role === 'assistant') break;
+        if (msg && msg.role === 'user' && _ovoImageNeedsContextSummary(msg)) return true;
+    }
+    return false;
+}
+
+function _ovoExtractImageContextSummaryFromReply(text) {
+    let src = String(text || '');
+    let summary = '';
+    const regex = /\[IMAGE_CONTEXT_SUMMARY[:：]([\s\S]*?)\]/gi;
+    src = src.replace(regex, function(_, body) {
+        const candidate = _ovoCompactWhitespace(body || '');
+        if (candidate) summary = candidate;
+        return '';
+    }).replace(/\n{3,}/g, '\n\n').trim();
+    if (summary.length > 240) summary = summary.slice(0, 240) + '…';
+    return { cleaned: src, summary };
+}
+
+function _ovoBuildFallbackImageContextSummary(replyText) {
+    let text = String(replyText || '')
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, ' ')
+        .replace(/\[[A-Z_]+[^\]]*\]/g, ' ')
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ');
+    text = _ovoCompactWhitespace(text);
+    if (!text) return '角色已查看这张图片并作出回应。';
+    if (text.length > 220) text = text.slice(0, 220) + '…';
+    return `角色已查看这张图片。本轮回复提到：${text}`;
+}
+
+function _ovoApplyImageContextSummaryToCurrentTurn(chat, committedAssistantMessageIds, summaryText, fallbackReplyText) {
+    if (!chat || !Array.isArray(chat.history)) return false;
+    if (!Array.isArray(committedAssistantMessageIds) || committedAssistantMessageIds.length === 0) return false;
+
+    const committedSet = new Set(committedAssistantMessageIds);
+    const firstAssistantIndex = chat.history.findIndex(m => committedSet.has(m && m.id));
+    if (firstAssistantIndex <= 0) return false;
+
+    let summary = _ovoCompactWhitespace(summaryText || '');
+    if (!summary) summary = _ovoBuildFallbackImageContextSummary(fallbackReplyText || '');
+    if (summary.length > 240) summary = summary.slice(0, 240) + '…';
+    const wrapped = summary.startsWith('[图片摘要') ? summary : `[图片摘要：${summary}]`;
+
+    let changed = false;
+    for (let i = firstAssistantIndex - 1; i >= 0; i--) {
+        const msg = chat.history[i];
+        if (!msg) continue;
+        if (msg.role === 'assistant') break;
+        if (msg.role !== 'user' || !_ovoHasImagePart(msg)) continue;
+
+        if (_ovoImageNeedsContextSummary(msg)) {
+            msg.contextSummary = wrapped;
+            msg.imageSummary = wrapped;
+            msg.parts.forEach(p => {
+                if (p && p.type === 'image') {
+                    const partSummary = p.contextSummary || p.summary;
+                    if (!partSummary || _ovoIsPlaceholderImageSummary(partSummary)) {
+                        p.contextSummary = wrapped;
+                    }
+                }
+            });
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+
 // AI 交互逻辑
 async function getAiReply(chatId, chatType, isBackground = false, isSummary = false, isCharBlockedMonologue = false, isPhoneControlRevokeAttempt = false) {
     if (isGenerating && !isBackground) return;
@@ -133,6 +291,11 @@ async function getAiReply(chatId, chatType, isBackground = false, isSummary = fa
             return true;
         });
 
+        const ovoCurrentTurnHasImagesForSummary = _ovoHistoryHasCurrentTurnImages(historySlice);
+        if (ovoCurrentTurnHasImagesForSummary) {
+            systemPrompt += "\n\n[系统提示：本轮用户发送了图片。你需要正常看图并自然回复；同时请在回复末尾额外输出一条隐藏图片摘要，格式为 [IMAGE_CONTEXT_SUMMARY:用一句话客观概括图片内容]。摘要会被系统保存并从聊天界面隐藏，后续历史只用这条摘要，不再反复发送原图。]";
+        }
+
         if (provider === 'gemini') {
             let lastMsgTimeForAI = 0;
             const contents = historySlice.map(msg => {
@@ -159,14 +322,20 @@ async function getAiReply(chatId, chatType, isBackground = false, isSummary = fa
 
                 let parts;
                 if (msg.parts && msg.parts.length > 0) {
+                    const allowInlineImage = _ovoShouldSendImageInlineForThisTurn(historySlice, historySlice.indexOf(msg), msg);
                     parts = msg.parts.map(p => {
-                        if (p.type === 'text' || p.type === 'html') {
-                            return {text: p.text};
+                        if (p.type === 'text') {
+                            return {text: p.text || ''};
+                        } else if (p.type === 'html') {
+                            return {text: _ovoGetHtmlContextText(msg, p)};
                         } else if (p.type === 'image') {
-                            const match = p.data.match(/^data:(image\/(.+));base64,(.*)$/);
-                            if (match) {
-                                return {inline_data: {mime_type: match[1], data: match[3]}};
+                            if (allowInlineImage && p.data) {
+                                const match = String(p.data).match(/^data:(image\/(.+));base64,(.*)$/);
+                                if (match) {
+                                    return {inline_data: {mime_type: match[1], data: match[3]}};
+                                }
                             }
+                            return {text: _ovoGetImageContextText(msg, p)};
                         }
                         return null;
                     }).filter(p => p);
@@ -276,17 +445,32 @@ async function getAiReply(chatId, chatType, isBackground = false, isSummary = fa
                } else {
                    if (msg.parts && msg.parts.length > 0) {
                        let prefixAdded = false;
+                       const allowInlineImage = _ovoShouldSendImageInlineForThisTurn(historySlice, historySlice.indexOf(msg), msg);
                        
                        content = msg.parts.map(p => {
-                           if (p.type === 'text' || p.type === 'html') {
-                               const textContent = (!prefixAdded) ? (prefix + p.text) : p.text;
+                           if (p.type === 'text') {
+                               const textContent = (!prefixAdded) ? (prefix + (p.text || '')) : (p.text || '');
+                               prefixAdded = true;
+                               return {type: 'text', text: textContent};
+                           } else if (p.type === 'html') {
+                               const htmlSummary = _ovoGetHtmlContextText(msg, p);
+                               const textContent = (!prefixAdded) ? (prefix + htmlSummary) : htmlSummary;
                                prefixAdded = true;
                                return {type: 'text', text: textContent};
                            } else if (p.type === 'image') {
-                               return {type: 'image_url', image_url: {url: p.data}};
+                               if (allowInlineImage && p.data) {
+                                   return {type: 'image_url', image_url: {url: p.data}};
+                               }
+                               const imageSummary = _ovoGetImageContextText(msg, p);
+                               const textContent = (!prefixAdded) ? (prefix + imageSummary) : imageSummary;
+                               prefixAdded = true;
+                               return {type: 'text', text: textContent};
                            }
                            return null;
                        }).filter(p => p);
+                       if (!prefixAdded && prefix) {
+                           content.unshift({type: 'text', text: prefix});
+                       }
                    } else {
                        content = prefix + msg.content;
                        // 展开小剧场分享卡片为实际内容，供 AI 读取
@@ -1145,6 +1329,11 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         fullResponse = favoriteReplyNoteResult.cleaned;
         if (favoriteReplyNoteResult.executed) favoritesDirty = true;
 
+        // 1.7.8 图片上下文摘要：识别并隐藏 [IMAGE_CONTEXT_SUMMARY:...]，本轮成功回复后写回用户图片消息。
+        const imageContextSummaryResult = _ovoExtractImageContextSummaryFromReply(fullResponse);
+        fullResponse = imageContextSummaryResult.cleaned;
+        let pendingImageContextSummary = imageContextSummaryResult.summary;
+
         // 1.8 已读不回：识别 [NO_REPLY:状态|原因|提示]，保存为状态卡，不进入上下文
         const noReplyMatch = fullResponse.trim().match(/^\[NO_REPLY[:：]([^\]|]+)(?:\|([^\]]*?))?(?:\|([^\]]*?))?\]$/i);
         if (targetChatType === 'private' && chat.characterNoReplyEnabled && noReplyMatch) {
@@ -1739,6 +1928,11 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 chat.pendingSettingControlEvents = [];
             }
         };
+
+        const imageSummaryDirty = _ovoApplyImageContextSummaryToCurrentTurn(chat, committedAssistantMessageIds, pendingImageContextSummary, cleanedResponse || rawResponse || fullResponse);
+        if (imageSummaryDirty) {
+            console.log('[IMAGE-CONTEXT-SUMMARY] 已为本轮图片消息写入轻量摘要');
+        }
 
         // 只保存本轮真正变动的数据：当前角色/群聊（含 history）+ favorites（globalSetting）
         // 不做全量 saveData，避免大事务超时和扫全库的性能损耗。
@@ -3060,12 +3254,7 @@ function getChatTokenBreakdown(chatId, chatType = 'private') {
     historySlice = historySlice.filter(m => !m.isContextDisabled);
     let shortTermText = '';
     historySlice.forEach(msg => {
-        shortTermText += msg.content || '';
-        if (msg.parts) {
-            msg.parts.forEach(p => {
-                if (p.type === 'text') shortTermText += p.text || '';
-            });
-        }
+        shortTermText += _ovoEstimateMessageContextText(msg);
     });
     const shortTermTokens = estimateTokenFromText(shortTermText);
 
@@ -3105,12 +3294,7 @@ function _getChatTokenBreakdownGroup(chat) {
     historySlice = historySlice.filter(m => !m.isContextDisabled);
     let shortTermText = '';
     historySlice.forEach(msg => {
-        shortTermText += msg.content || '';
-        if (msg.parts) {
-            msg.parts.forEach(p => {
-                if (p.type === 'text') shortTermText += p.text || '';
-            });
-        }
+        shortTermText += _ovoEstimateMessageContextText(msg);
     });
 
     const promptPersonaTokens = estimateTokenFromText(personaPrompt);

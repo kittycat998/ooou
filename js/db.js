@@ -186,8 +186,28 @@ const globalSettingKeys = [
 ];
 if (typeof window !== 'undefined') window.globalSettingKeysForBackup = globalSettingKeys;
 
-const appVersion = "WOW-v58.3.3-calendar-period-ongoing-2026-05-15";
+const appVersion = "WOW-v58.4.1-image-context-summary-2026-05-16";
 const updateLog = [
+    {
+        version: "WOW v58.4.1",
+        date: "2026-05-16",
+        notes: [
+            "WOW v58.4.1：图片当轮识图后自动补上下文摘要。",
+            "本轮图片仍正常给角色看，角色回复后会把隐藏图片摘要写回图片消息。",
+            "后续历史上下文优先读取图片摘要，不再显示“尚未生成摘要”。",
+            "若模型未按格式输出摘要，会用本轮回复生成兜底摘要，避免图片长期无摘要。"
+        ]
+    },
+    {
+        version: "WOW v58.4",
+        date: "2026-05-16",
+        notes: [
+            "WOW v58.4：图片与 HTML 上下文减负。",
+            "历史图片不再反复把原图塞进 API，上下文改用图片摘要/轻量占位；当前轮新发图片仍可正常给角色识图。",
+            "HTML/互动消息在聊天界面保持完整显示，但拼上下文时改用摘要文本，避免整段 HTML/CSS 污染上下文。",
+            "Token 分布里的短期记忆统计同步改用轻量上下文文本，显示更接近真实请求内容。"
+        ]
+    },
     {
         version: "WOW v58.3.3",
         date: "2026-05-15",

@@ -151,7 +151,9 @@ async function sendImageForRecognition(base64Data) {
         id: `msg_${Date.now()}`,
         role: 'user',
         content: base64Data,
-        parts: [{type: 'text', text: textPrompt}, {type: 'image', data: base64Data}],
+        // 图片本体用于聊天界面展示；后续历史上下文只读取 contextSummary，避免反复把原图塞进 API。
+        contextSummary: '[图片：用户发送了一张图片，尚未生成摘要]',
+        parts: [{type: 'text', text: textPrompt}, {type: 'image', data: base64Data, contextSummary: '[图片：用户发送了一张图片，尚未生成摘要]'}],
         timestamp: Date.now(),
     };
     if (currentChatType === 'group') {
