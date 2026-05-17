@@ -965,6 +965,10 @@ function loadSettingsToSidebar() {
         if(nameDisplay) nameDisplay.textContent = e.remarkName;
         const realNameEl = document.getElementById('setting-char-real-name');
         if (realNameEl) realNameEl.value = e.realName || '';
+        const birthdayEl = document.getElementById('setting-char-birthday');
+        if (birthdayEl) birthdayEl.value = e.birthday || '';
+        const enableDynamicAgeEl = document.getElementById('setting-char-enable-dynamic-age');
+        if (enableDynamicAgeEl) enableDynamicAgeEl.checked = !!e.enableDynamicAge;
         const remarkInput = document.getElementById('setting-char-remark');
         if (remarkInput) {
             remarkInput.value = e.remarkName;
@@ -1070,6 +1074,11 @@ function loadSettingsToSidebar() {
             if (myNicknameEl) myNicknameEl.value = e.myNickname || '';
             document.getElementById('setting-my-persona').value = e.myPersona || '';
         }
+        const myBirthdayEl = document.getElementById('setting-my-birthday');
+        if (myBirthdayEl) myBirthdayEl.value = e.myBirthday || '';
+        const myEnableDynamicAgeEl = document.getElementById('setting-my-enable-dynamic-age');
+        if (myEnableDynamicAgeEl) myEnableDynamicAgeEl.checked = !!e.myEnableDynamicAge;
+
         document.getElementById('setting-theme-color').value = e.theme || 'white_pink';
         document.getElementById('setting-max-memory').value = e.maxMemory;
         document.getElementById('setting-sync-group-memory').checked = e.syncGroupMemory || false;
@@ -1128,6 +1137,71 @@ function loadSettingsToSidebar() {
         if (charChangeUserNicknameEl) charChangeUserNicknameEl.checked = e.characterCanChangeUserNickname || false;
         const charMusicControlEl = document.getElementById('setting-char-music-control-enabled');
         if (charMusicControlEl) charMusicControlEl.checked = e.musicControlEnabled || false;
+
+        // === 虚拟地点与天气设置 ===
+        if (!e.weatherSettings || typeof e.weatherSettings !== 'object') e.weatherSettings = {};
+        const ws = e.weatherSettings;
+        if (ws.provider === undefined) ws.provider = 'openmeteo';
+        const weatherContextEnabledEl = document.getElementById('setting-weather-context-enabled');
+        const weatherExposeRealEl = document.getElementById('setting-weather-expose-real-location');
+        const charWeatherEnabledEl = document.getElementById('setting-char-weather-enabled');
+        const charWeatherContainerEl = document.getElementById('setting-char-weather-location-container');
+        const charVirtualLocationEl = document.getElementById('setting-char-virtual-location');
+        const charWeatherLocationEl = document.getElementById('setting-char-weather-location');
+        const userWeatherEnabledEl = document.getElementById('setting-user-weather-enabled');
+        const userWeatherContainerEl = document.getElementById('setting-user-weather-location-container');
+        const userVirtualLocationEl = document.getElementById('setting-user-virtual-location');
+        const userWeatherLocationEl = document.getElementById('setting-user-weather-location');
+        const weatherProviderEl = document.getElementById('setting-weather-provider');
+        const weatherApiKeyEl = document.getElementById('setting-weather-api-key');
+        const weatherApiKeyContainerEl = document.getElementById('setting-weather-api-key-container');
+        const userWeatherLocateBtnEl = document.getElementById('setting-user-weather-locate-btn');
+
+        function updateWeatherSettingVisibility() {
+            if (charWeatherContainerEl && charWeatherEnabledEl) charWeatherContainerEl.style.display = charWeatherEnabledEl.checked ? 'block' : 'none';
+            if (userWeatherContainerEl && userWeatherEnabledEl) userWeatherContainerEl.style.display = userWeatherEnabledEl.checked ? 'block' : 'none';
+            if (weatherApiKeyContainerEl && weatherProviderEl) {
+                weatherApiKeyContainerEl.style.display = (weatherProviderEl.value === 'qweather' || weatherProviderEl.value === 'seniverse') ? 'flex' : 'none';
+            }
+        }
+
+        if (weatherContextEnabledEl) weatherContextEnabledEl.checked = ws.contextEnabled !== false;
+        if (weatherExposeRealEl) weatherExposeRealEl.checked = !!ws.exposeRealLocation;
+        if (charWeatherEnabledEl) charWeatherEnabledEl.checked = !!ws.charEnabled;
+        if (charVirtualLocationEl) charVirtualLocationEl.value = ws.charVirtualLocation || '';
+        if (charWeatherLocationEl) charWeatherLocationEl.value = ws.charWeatherLocation || '';
+        if (userWeatherEnabledEl) userWeatherEnabledEl.checked = !!ws.userEnabled;
+        if (userVirtualLocationEl) userVirtualLocationEl.value = ws.userVirtualLocation || '';
+        if (userWeatherLocationEl) userWeatherLocationEl.value = ws.userWeatherLocation || '';
+        if (weatherProviderEl) weatherProviderEl.value = ws.provider || 'openmeteo';
+        if (weatherApiKeyEl) weatherApiKeyEl.value = ws.apiKey || '';
+        if (charWeatherEnabledEl) charWeatherEnabledEl.onchange = updateWeatherSettingVisibility;
+        if (userWeatherEnabledEl) userWeatherEnabledEl.onchange = updateWeatherSettingVisibility;
+        if (weatherProviderEl) weatherProviderEl.onchange = updateWeatherSettingVisibility;
+        if (userWeatherLocateBtnEl) {
+            userWeatherLocateBtnEl.onclick = () => {
+                if (!navigator.geolocation) {
+                    showToast('当前浏览器不支持定位');
+                    return;
+                }
+                userWeatherLocateBtnEl.disabled = true;
+                userWeatherLocateBtnEl.textContent = '定位中...';
+                navigator.geolocation.getCurrentPosition(pos => {
+                    const lat = Number(pos.coords.latitude).toFixed(5);
+                    const lon = Number(pos.coords.longitude).toFixed(5);
+                    if (userWeatherLocationEl) userWeatherLocationEl.value = `${lat},${lon}`;
+                    userWeatherLocateBtnEl.disabled = false;
+                    userWeatherLocateBtnEl.textContent = '📍 定位';
+                    showToast('已填入当前位置坐标');
+                }, err => {
+                    console.warn('定位失败:', err);
+                    userWeatherLocateBtnEl.disabled = false;
+                    userWeatherLocateBtnEl.textContent = '📍 定位';
+                    showToast('定位失败，请手动填写城市');
+                }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 10 * 60 * 1000 });
+            };
+        }
+        updateWeatherSettingVisibility();
 
         // 加载小剧场设置
         const charTheaterEnabledEl = document.getElementById('setting-char-theater-enabled');
@@ -1525,6 +1599,10 @@ async function saveSettingsFromSidebar() {
         e.avatar = document.getElementById('setting-char-avatar-preview').src;
         const realNameInput = document.getElementById('setting-char-real-name');
         if (realNameInput) e.realName = (realNameInput.value || '').trim();
+        const birthdayInput = document.getElementById('setting-char-birthday');
+        if (birthdayInput) e.birthday = (birthdayInput.value || '').trim();
+        const enableDynamicAgeInput = document.getElementById('setting-char-enable-dynamic-age');
+        if (enableDynamicAgeInput) e.enableDynamicAge = !!enableDynamicAgeInput.checked;
         const remarkInputForAware = document.getElementById('setting-char-remark');
         const oldRemarkNameForAware = remarkInputForAware ? (remarkInputForAware.dataset.oldRemarkNameForAware || '') : (e.remarkName || '');
         const newRemarkNameForAware = remarkInputForAware ? (remarkInputForAware.value || '').trim() : (e.remarkName || '');
@@ -1608,6 +1686,10 @@ async function saveSettingsFromSidebar() {
             e.myNickname = newUserNicknameForAware;
         }
         e.myPersona = document.getElementById('setting-my-persona').value;
+        const myBirthdayInput = document.getElementById('setting-my-birthday');
+        if (myBirthdayInput) e.myBirthday = (myBirthdayInput.value || '').trim();
+        const myEnableDynamicAgeInput = document.getElementById('setting-my-enable-dynamic-age');
+        if (myEnableDynamicAgeInput) e.myEnableDynamicAge = !!myEnableDynamicAgeInput.checked;
         e.theme = document.getElementById('setting-theme-color').value;
         e.maxMemory = document.getElementById('setting-max-memory').value;
         e.syncGroupMemory = document.getElementById('setting-sync-group-memory').checked;
@@ -1641,6 +1723,29 @@ async function saveSettingsFromSidebar() {
         e.characterCanChangeUserNickname = charChangeUserNicknameEl ? charChangeUserNicknameEl.checked : false;
         const charMusicControlEl = document.getElementById('setting-char-music-control-enabled');
         e.musicControlEnabled = charMusicControlEl ? charMusicControlEl.checked : false;
+
+        // 保存虚拟地点与天气设置
+        e.weatherSettings = e.weatherSettings || {};
+        const weatherContextEnabledSave = document.getElementById('setting-weather-context-enabled');
+        const weatherExposeRealSave = document.getElementById('setting-weather-expose-real-location');
+        const charWeatherEnabledSave = document.getElementById('setting-char-weather-enabled');
+        const charVirtualLocationSave = document.getElementById('setting-char-virtual-location');
+        const charWeatherLocationSave = document.getElementById('setting-char-weather-location');
+        const userWeatherEnabledSave = document.getElementById('setting-user-weather-enabled');
+        const userVirtualLocationSave = document.getElementById('setting-user-virtual-location');
+        const userWeatherLocationSave = document.getElementById('setting-user-weather-location');
+        const weatherProviderSave = document.getElementById('setting-weather-provider');
+        const weatherApiKeySave = document.getElementById('setting-weather-api-key');
+        e.weatherSettings.contextEnabled = weatherContextEnabledSave ? !!weatherContextEnabledSave.checked : true;
+        e.weatherSettings.exposeRealLocation = !!(weatherExposeRealSave && weatherExposeRealSave.checked);
+        e.weatherSettings.charEnabled = !!(charWeatherEnabledSave && charWeatherEnabledSave.checked);
+        e.weatherSettings.charVirtualLocation = charVirtualLocationSave ? (charVirtualLocationSave.value || '').trim() : '';
+        e.weatherSettings.charWeatherLocation = charWeatherLocationSave ? (charWeatherLocationSave.value || '').trim() : '';
+        e.weatherSettings.userEnabled = !!(userWeatherEnabledSave && userWeatherEnabledSave.checked);
+        e.weatherSettings.userVirtualLocation = userVirtualLocationSave ? (userVirtualLocationSave.value || '').trim() : '';
+        e.weatherSettings.userWeatherLocation = userWeatherLocationSave ? (userWeatherLocationSave.value || '').trim() : '';
+        e.weatherSettings.provider = weatherProviderSave ? (weatherProviderSave.value || 'openmeteo') : 'openmeteo';
+        e.weatherSettings.apiKey = weatherApiKeySave ? (weatherApiKeySave.value || '').trim() : '';
 
         // 保存小剧场设置
         const charTheaterEnabledSave = document.getElementById('setting-char-theater-enabled');

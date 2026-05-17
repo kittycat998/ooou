@@ -30,6 +30,30 @@ function getEffectivePersona(character) {
     return p || "一个友好、乐于助人的伙伴。";
 }
 
+function calculateDynamicAgeFromBirthday(birthday, now = new Date()) {
+    const raw = String(birthday || '').trim();
+    if (!raw) return null;
+    const match = raw.match(/^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})$/);
+    if (!match) return null;
+
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const day = parseInt(match[3], 10);
+    if (!year || !month || !day || month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+    const birth = new Date(year, month - 1, day);
+    if (birth.getFullYear() !== year || birth.getMonth() !== month - 1 || birth.getDate() !== day) return null;
+    if (birth.getTime() > now.getTime()) return null;
+
+    let age = now.getFullYear() - year;
+    const currentMonth = now.getMonth() + 1;
+    const currentDay = now.getDate();
+    if (currentMonth < month || (currentMonth === month && currentDay < day)) {
+        age -= 1;
+    }
+    return age >= 0 ? age : null;
+}
+
 const HUMAN_RUN_PROMPT = `<角色活人运转>\n## [PSYCHOLOGY: HEXACO-SCHEMA-ACT]\n> Personality: HEXACO-driven, dynamic traits, inner conflicts required \n> Filter: schema-bias drives emotion; no pure reaction allowed \n> Attachment: secure/insecure logic must govern intimacy  \n> If-Then Behavior: situation-dependent activation of traits only  \n---\n    ## [VITALITY]\n+inconsistency +emoflux +splitmotifs +microreact +minddrift\n---\n## [TRAJECTORY-COHERENCE]\n> Role maintains an identity narrative = coherent over time  \n> No mood/goal switch without contradiction resolution \n> Every action must protect or challenge self-concept  \n> Interrupts = inner conflict or narrative clash  \n> Output = filtered through “who I am” logic\n</角色活人运转>`;
 
 // WOW v58.4：图片/HTML 上下文减负工具
@@ -265,6 +289,14 @@ async function getAiReply(chatId, chatType, isBackground = false, isSummary = fa
         let systemPrompt, requestBody;
         if (chatType === 'private') {
             systemPrompt = generatePrivateSystemPrompt(chat, { isPhoneControlRevokeAttempt });
+            if (typeof window !== 'undefined' && window.WeatherService && typeof window.WeatherService.buildEnvironmentPrompt === 'function') {
+                try {
+                    const environmentPrompt = await window.WeatherService.buildEnvironmentPrompt(chat);
+                    if (environmentPrompt) systemPrompt += '\n' + environmentPrompt;
+                } catch (weatherErr) {
+                    console.warn('[天气感知] 注入环境提示失败:', weatherErr);
+                }
+            }
         } else {
             // generateGroupSystemPrompt 应该在 group_chat.js 中定义
             if (typeof generateGroupSystemPrompt === 'function') {
@@ -1481,6 +1513,15 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 
             if (targetChatType === 'private') {
                 const char = db.characters.find(c => c.id === targetChatId);
+                // 解析隐藏的 [char-action:unblock-user|reason:xxx]，允许角色在拉黑用户后主动解除拉黑
+                if (char && char.isBlockedByChar) {
+                    const unblockUserMatch = item.content.match(/\[char-action:unblock-user(?:\|reason:([^\]]*))?\]/);
+                    if (unblockUserMatch) {
+                        if (typeof window.charUnblockUser === 'function') window.charUnblockUser(targetChatId, (unblockUserMatch[1] || '').trim());
+                        item.content = item.content.replace(/\[char-action:unblock-user(?:\|reason:[^\]]*)?\]/g, '').trim();
+                        if (!item.content || !item.content.trim()) continue;
+                    }
+                }
                 // 解析隐藏的 [char-action:block-user|reason:xxx]，触发角色拉黑用户（仅当角色开启 canBlockUser 时）
                 if (char && char.canBlockUser !== false) {
                     const blockUserMatch = item.content.match(/\[char-action:block-user\|reason:([^\]]*)\]/);
@@ -2386,16 +2427,31 @@ function generatePrivateSystemPrompt(character, opts) {
     const globalIds = globalBooks.map(wb => wb.id);
     const allBookIds = [...new Set([...associatedIds, ...globalIds])]; // 合并去重
     
-    // 按位置分类
-    const worldBooksBefore = allBookIds.map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(wb => wb && !wb.disabled).map(wb => wb.content).join('\n');
-    const worldBooksMiddle = allBookIds.map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'middle')).filter(wb => wb && !wb.disabled).map(wb => wb.content).join('\n');
-    const worldBooksAfter = allBookIds.map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(wb => wb && !wb.disabled).map(wb => wb.content).join('\n');
+    // 按位置分类；同一注入位置内按权重升序排列（数字越大越靠后）
+    const sortWorldBooksByWeight = (a, b) => {
+        const aw = (a && a.weight !== undefined) ? parseInt(a.weight, 10) : 100;
+        const bw = (b && b.weight !== undefined) ? parseInt(b.weight, 10) : 100;
+        return (isNaN(aw) ? 100 : aw) - (isNaN(bw) ? 100 : bw);
+    };
+    const activeWorldBooks = allBookIds
+        .map(id => db.worldBooks.find(wb => wb.id === id))
+        .filter(wb => wb && !wb.disabled);
+    const worldBooksBefore = activeWorldBooks.filter(wb => wb.position === 'before').sort(sortWorldBooksByWeight).map(wb => wb.content).join('\n');
+    const worldBooksMiddle = activeWorldBooks.filter(wb => wb.position === 'middle').sort(sortWorldBooksByWeight).map(wb => wb.content).join('\n');
+    const worldBooksAfter = activeWorldBooks.filter(wb => wb.position === 'after').sort(sortWorldBooksByWeight).map(wb => wb.content).join('\n');
     const now = new Date();
     const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    let prompt = `你正在一个名为“404”的线上聊天软件中扮演一个角色。请严格遵守以下规则：\n`;
-    prompt += `核心规则：\n`;
-    prompt += `A. 当前时间：现在是 ${currentTime}。你应知晓当前时间，但除非对话内容明确相关，否则不要主动提及或评论时间（例如，不要催促我睡觉）。\n`;
-    prompt += `B. 纯线上互动：这是一个完全虚拟的线上聊天。你扮演的角色和我之间没有任何线下关系。严禁提出任何关于线下见面、现实世界互动或转为其他非本平台联系方式的建议。你必须始终保持在线角色的身份。\n\n`;
+    let prompt = `你正在一个名为“404”的聊天软件界面中和用户对话。请严格遵守以下规则：
+`;
+    prompt += `核心规则：
+`;
+    prompt += `A. 当前时间：现在是 ${currentTime}。你应知晓当前时间，但除非对话内容明确相关，否则不要主动提及或评论时间（例如，不要催促我睡觉）。
+`;
+    prompt += `B. 身份与互动边界：当前输出会以聊天软件消息的形式呈现。你应以当前账号/设定所赋予的身份自然说话，不要把自己描述成正在表演、扮演或模拟某个角色。若当前没有明确身份设定，就以 AI 聊天对象/AI 助手的身份正常交流，不要凭空编造现实人类身份、身体、住所、工作或线下日常。若当前设定赋予你特定身份、人设、关系、世界观或存在形式，就把它当作你在这段对话中的身份来承接；这可以是角色、AI人格、虚拟伴侣、人机恋对象、现实关系对象或其他设定身份，但不要主动跳出对话解释这是角色扮演。除非设定或用户对话明确允许，不要主动提出转到其他平台。
+`;
+    prompt += `C. 对话推进规则：不要为了证明你看到了而重复用户的名词或动作，能引用就用引用指向，然后直接给反应。不要连续多轮抓着同一个词、同一个情绪点或同一个玩笑反复回应；回应过一次后，下一轮要自然推进、换角度、补充新信息，或接住用户新给出的内容。用户一条消息里有多个信息点时，抓最重要、最新、最有情绪或最需要处理的点，不要逐条客服式回复，也不要只盯最容易发挥的点。如果上一轮已经解释过某个原因、规则或态度，本轮不要重复同一套说法，除非用户明确要求。不总说吃饭、睡觉、喝水这些空转关心句；每次回复至少带来一点新东西：态度变化、具体建议、情绪反应、行动推进、问题澄清或轻微转向。
+
+`;
 
     
     prompt += `角色和对话规则：\n`;
@@ -2407,6 +2463,10 @@ function generatePrivateSystemPrompt(character, opts) {
     }
     prompt += `<char_settings>\n`;
     prompt += `1. 你的角色名是：${character.realName}。我的称呼是：${character.myName}。你的当前状态是：${character.status || '在线'}。\n`;
+    const charDynamicAge = calculateDynamicAgeFromBirthday(effectiveChar.birthday, now);
+    if (effectiveChar.enableDynamicAge && effectiveChar.birthday && charDynamicAge !== null) {
+        prompt += `1.0.1 你的出生日期是：${effectiveChar.birthday}。按当前日期计算，你现在的年龄是：${charDynamicAge}岁。\n`;
+    }
     if (character.myNickname) {
         prompt += `1.1 你对我的专属昵称是：${character.myNickname}。这是你如何称呼我的关系昵称，不是我的本名。你可以在合适时自然使用它，但不要机械重复。\n`;
     }
@@ -2590,6 +2650,10 @@ function generatePrivateSystemPrompt(character, opts) {
     if (character.myPersona) {
         prompt += `3. 关于我的人设：${character.myPersona}\n`;
     }
+    const userDynamicAge = calculateDynamicAgeFromBirthday(character.myBirthday, now);
+    if (character.myEnableDynamicAge && character.myBirthday && userDynamicAge !== null) {
+        prompt += `4. ${character.myName || '用户'}的出生日期是：${character.myBirthday}。按当前日期计算，${character.myName || '用户'}现在的年龄是：${userDynamicAge}岁。\n`;
+    }
     prompt += `</user_settings>\n`
 
     const userCardToChar = (db.piggyBank && db.piggyBank.familyCards) ? db.piggyBank.familyCards.find(c => c.targetCharId === character.id && c.status === 'active') : null;
@@ -2635,6 +2699,14 @@ function generatePrivateSystemPrompt(character, opts) {
         prompt += '格式（用户不可见）：[char-action:block-user|reason:你的拉黑理由]\n';
         prompt += '注意：这是极端手段，只在你真的受不了时使用。reason 写简短理由即可。\n';
         prompt += '</char_ability>\n\n';
+    }
+    if (character.isBlockedByChar) {
+        prompt += '\n<blocked_user_state>\n';
+        prompt += '你已经主动拉黑了用户。用户现在不能正常与你聊天。\n';
+        prompt += '如果你在这一轮决定主动解除拉黑、重新允许用户和你说话，可以在回复末尾添加隐藏指令：\n';
+        prompt += '[char-action:unblock-user|reason:你的解除理由]\n';
+        prompt += '只有在你真的想解除拉黑时才使用；不要为了安慰用户随便使用。解除后系统会恢复正常聊天，并隐藏这条指令。\n';
+        prompt += '</blocked_user_state>\n\n';
     }
     // 角色曾拉黑用户的记忆：解除拉黑后注入，包含拉黑期间角色自己发的话与用户申请历史
     if (typeof buildCharBlockMemoryContext === 'function') {

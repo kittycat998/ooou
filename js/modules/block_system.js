@@ -4,6 +4,25 @@
     let blockSystemIntervalId = null;
     let currentPendingRequestCharId = null;
     let currentPendingRequestId = null;
+    const AUTO_BLOCK_MESSAGE_DELAYS_MS = [30 * 1000, 3 * 60 * 1000, 6 * 60 * 1000];
+    const AUTO_BLOCK_REJECT_COOLDOWN_MS = 30 * 60 * 1000;
+    const _autoBlockedRunSet = new Set();
+
+
+    async function persistBlockCharacter(char, reason) {
+        if (!char || !char.id) return;
+        try {
+            if (typeof saveCharacterData === 'function') {
+                await saveCharacterData(char, reason || 'block_system');
+            } else if (typeof saveData === 'function') {
+                await saveData();
+            }
+        } catch (e) {
+            console.error('[拉黑系统] 局部保存失败:', e);
+            if (typeof showToast === 'function') showToast('保存拉黑状态失败，请稍后重试');
+            throw e;
+        }
+    }
 
     function formatTimeAgo(ts) {
         if (!ts || typeof ts !== 'number') return '';
@@ -134,6 +153,139 @@
         return p || '一个友好、乐于助人的伙伴。';
     }
 
+
+    function getAutoBlockedStageLabel(stage) {
+        if (stage === 0) return '第一次（约 30 秒后）';
+        if (stage === 1) return '第二次（约 3 分钟后）';
+        if (stage === 2) return '第三次（约 6 分钟后）';
+        return '额外一次';
+    }
+
+    function getBlockedContactRecentLines(char) {
+        return (char.history || [])
+            .filter(function (m) { return !m.isContextDisabled; })
+            .slice(-12)
+            .map(function (m) {
+                var prefix = m.role === 'user' ? '用户' : (char.realName || char.remarkName || '角色');
+                if (m.sentWhileBlocked) prefix = '[拉黑后用户独白]';
+                if (m.deliveryStatus === 'blocked') prefix = '[被拦截的未送达消息]';
+                var content = (m.content || '').replace(/\[.*?的消息[：:]/, '').replace(/\]$/, '').trim().slice(0, 180);
+                return prefix + ': ' + content;
+            }).join('\n');
+    }
+
+    async function generateBlockedMessagesAndDecision(char) {
+        var br = char.blockReapply || {};
+        var stage = Math.max(0, parseInt(br.autoStage, 10) || 0);
+        var rejectedRequests = (char.friendRequests || []).filter(function (r) { return r.status === 'rejected'; });
+        var pendingCount = (char.friendRequests || []).filter(function (r) { return r.status === 'pending'; }).length;
+        var prompt = '你是「' + (char.realName || char.remarkName || '角色') + '」，你的人设：\n' + getEffectivePersonaForBlock(char) + '\n\n';
+        prompt += '当前状态：\n';
+        prompt += '- 用户在 ' + formatTimeAgo(char.blockedAt) + ' 把你拉黑了\n';
+        prompt += '- 这是拉黑后的 ' + getAutoBlockedStageLabel(stage) + ' 自动触发\n';
+        prompt += '- 你现在可以尝试给用户发送几条会被系统拦截、无法正常送达的消息。这些消息会显示在聊天框里，并在尾部带红色感叹号。\n';
+        prompt += '- 这些未送达消息不代表用户已经回复你，也不代表拉黑已经解除。\n';
+        prompt += '- 你也可以自己决定是否发起好友申请，请只在你真的想重新加回用户时才申请。\n';
+        prompt += '- 你已被拒绝的好友申请次数：' + rejectedRequests.length + '；当前未处理好友申请数：' + pendingCount + '\n';
+        prompt += '- 最近对话（含拉黑后双方留下的内容）：\n' + (getBlockedContactRecentLines(char) || '（无）') + '\n\n';
+        prompt += '请以 JSON 格式回复，且只输出 JSON，不要代码块，不要解释：\n';
+        prompt += '{"blockedMessages":["第一条未送达消息","第二条未送达消息"],"shouldSendRequest":true或false,"requestReason":"若 shouldSendRequest 为 true，则写好友申请理由（50字内）；否则留空"}\n';
+        prompt += '要求：\n';
+        prompt += '1. blockedMessages 可以是一条，也可以是多条，不要为了刷屏而机械重复。\n';
+        prompt += '2. 每条消息都要自然、符合你的性格，像真人此刻会说的话。\n';
+        prompt += '3. 如果你不想申请，就把 shouldSendRequest 设为 false。\n';
+        var result = await callBlockApi('你是一个角色扮演助手。只输出一行 JSON，不要 markdown，不要多余文字。', prompt);
+        if (!result.ok) return { ok: false, error: result.error };
+        try {
+            var jsonStr = result.text.replace(/^[\s\S]*?\{/, '{').replace(/\}[\s\S]*$/, '}');
+            var obj = JSON.parse(jsonStr);
+            var messages = Array.isArray(obj.blockedMessages) ? obj.blockedMessages : [];
+            messages = messages.map(function (s) { return String(s || '').trim(); }).filter(Boolean).map(function (s) { return s.slice(0, 300); });
+            return {
+                ok: true,
+                blockedMessages: messages,
+                shouldSendRequest: !!obj.shouldSendRequest,
+                requestReason: String(obj.requestReason || '').trim().slice(0, 100)
+            };
+        } catch (e) {
+            return { ok: true, blockedMessages: [], shouldSendRequest: false, requestReason: '' };
+        }
+    }
+
+    function appendBlockedDeliveryMessages(char, messages) {
+        if (!char || !Array.isArray(messages) || !messages.length) return;
+        if (!char.history) char.history = [];
+        messages.forEach(function (raw, index) {
+            var text = String(raw || '').trim();
+            if (!text) return;
+            var msg = {
+                id: 'msg_blocked_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '_' + index,
+                role: 'assistant',
+                content: text,
+                parts: [{ type: 'text', text: text }],
+                timestamp: Date.now() + index,
+                deliveryStatus: 'blocked',
+                sentWhileUserBlocked: true,
+                isAutoBlockedMessage: true
+            };
+            char.history.push(msg);
+            if (typeof currentChatId !== 'undefined' && typeof currentChatType !== 'undefined' && currentChatType === 'private' && currentChatId === char.id) {
+                if (typeof addMessageBubble === 'function') addMessageBubble(msg, char.id, 'private');
+            }
+        });
+    }
+
+    function scheduleNextAutoBlockedCheck(char, reason) {
+        if (!char) return;
+        char.blockReapply = char.blockReapply || {};
+        var stage = Math.max(0, parseInt(char.blockReapply.autoStage, 10) || 0);
+        if (reason === 'rejected') {
+            char.blockReapply.nextCheckTime = Date.now() + AUTO_BLOCK_REJECT_COOLDOWN_MS;
+            char.blockReapply.autoStage = AUTO_BLOCK_MESSAGE_DELAYS_MS.length;
+            return;
+        }
+        if (stage >= AUTO_BLOCK_MESSAGE_DELAYS_MS.length - 1) {
+            char.blockReapply.autoStage = AUTO_BLOCK_MESSAGE_DELAYS_MS.length;
+            char.blockReapply.nextCheckTime = null;
+            return;
+        }
+        var nextStage = stage + 1;
+        char.blockReapply.autoStage = nextStage;
+        char.blockReapply.nextCheckTime = Date.now() + AUTO_BLOCK_MESSAGE_DELAYS_MS[nextStage];
+    }
+
+    async function triggerAutoBlockedReaction(char) {
+        if (!char || !char.isBlocked) return;
+        char.blockReapply = char.blockReapply || {};
+        if (char.blockReapply.pendingRequestId) return;
+        if ((char.blockReapply.mode || 'fixed') !== 'auto') return;
+        if (_autoBlockedRunSet.has(char.id)) return;
+        _autoBlockedRunSet.add(char.id);
+        try {
+            var result = await generateBlockedMessagesAndDecision(char);
+            if (!result.ok) {
+                console.warn('[拉黑系统] 自动未送达消息生成失败:', result.error || 'unknown');
+                scheduleNextAutoBlockedCheck(char);
+                await persistBlockCharacter(char, 'block_system:autoBlockedReactionError');
+                return;
+            }
+            if (result.blockedMessages && result.blockedMessages.length) {
+                appendBlockedDeliveryMessages(char, result.blockedMessages);
+            }
+            if (result.shouldSendRequest && !char.blockReapply.pendingRequestId) {
+                await doAddRequestAndShowModal(char, result.requestReason || '我想重新加回你好友。');
+            }
+            scheduleNextAutoBlockedCheck(char);
+            await persistBlockCharacter(char, 'block_system:autoBlockedReaction');
+            if (typeof renderMessages === 'function' && typeof currentChatId !== 'undefined' && typeof currentChatType !== 'undefined' && currentChatType === 'private' && currentChatId === char.id) {
+                renderMessages(false, true);
+            }
+            if (typeof renderChatList === 'function') renderChatList();
+        } finally {
+            _autoBlockedRunSet.delete(char.id);
+        }
+    }
+
     async function generateFriendRequestReason(char) {
         var rejectedRequests = (char.friendRequests || []).filter(function (r) { return r.status === 'rejected'; });
         var lastMessages = (char.history || [])
@@ -199,7 +351,7 @@
         } catch (e) {
             char.blockReapply.nextCheckTime = Date.now() + 10 * 60 * 1000;
         }
-        if (typeof saveData === 'function') saveData();
+        await persistBlockCharacter(char, 'block_system:aiDecideAndMaybeSendRequest');
     }
 
     async function doAddRequestAndShowModal(char, reason) {
@@ -215,7 +367,7 @@
         char.blockReapply = char.blockReapply || {};
         char.blockReapply.pendingRequestId = requestId;
         char.blockReapply.lastRequestTime = Date.now();
-        if (typeof saveData === 'function') saveData();
+        await persistBlockCharacter(char, 'block_system:addFriendRequest');
 
         currentPendingRequestCharId = char.id;
         currentPendingRequestId = requestId;
@@ -287,7 +439,7 @@
             timestamp: Date.now()
         });
 
-        if (typeof saveData === 'function') saveData();
+        persistBlockCharacter(char, 'block_system:acceptFriendRequest').catch(function (e) { console.error('[拉黑系统] 接受好友申请保存失败:', e); });
         if (typeof renderChatList === 'function') renderChatList();
         if (typeof showToast === 'function') showToast('已重新添加 ' + (char.realName || char.remarkName) + ' 为好友');
         closeFriendRequestModal();
@@ -304,7 +456,8 @@
         char.blockReapply = char.blockReapply || {};
         char.blockReapply.pendingRequestId = null;
 
-        if (typeof saveData === 'function') saveData();
+        if ((char.blockReapply && char.blockReapply.mode) === 'auto') scheduleNextAutoBlockedCheck(char, 'rejected');
+        persistBlockCharacter(char, 'block_system:rejectFriendRequest').catch(function (e) { console.error('[拉黑系统] 拒绝好友申请保存失败:', e); });
         if (typeof showToast === 'function') showToast('已拒绝 ' + (char.realName || char.remarkName) + ' 的好友申请');
         closeFriendRequestModal();
     }
@@ -319,8 +472,8 @@
 
             if ((char.blockReapply && char.blockReapply.mode) === 'auto') {
                 var nextCheck = char.blockReapply.nextCheckTime || char.blockedAt;
-                if (now < nextCheck) return;
-                aiDecideAndMaybeSendRequest(char);
+                if (!nextCheck || now < nextCheck) return;
+                triggerAutoBlockedReaction(char);
             } else {
                 var interval = ((char.blockReapply && char.blockReapply.fixedInterval) || 30) * 60 * 1000;
                 if (now - lastTime < interval) return;
@@ -331,10 +484,10 @@
 
     function startBlockSystemInterval() {
         if (blockSystemIntervalId) return;
-        blockSystemIntervalId = setInterval(checkBlockedCharacterRequests, 60000);
+        blockSystemIntervalId = setInterval(checkBlockedCharacterRequests, 15000);
     }
 
-    function blockCharacter(charId, mode, fixedInterval) {
+    async function blockCharacter(charId, mode, fixedInterval) {
         var char = db.characters.find(function (c) { return c.id === charId; });
         if (!char) return;
         char.isBlocked = true;
@@ -342,30 +495,59 @@
         if (!char.blockHistory) char.blockHistory = [];
         char.blockHistory.push({ blockedAt: Date.now(), unblockedAt: null });
         if (!char.friendRequests) char.friendRequests = [];
+        var blockMode = mode || 'fixed';
         char.blockReapply = {
-            mode: mode || 'fixed',
-            fixedInterval: fixedInterval || 30,
+            mode: blockMode,
+            fixedInterval: Math.max(1, parseInt(fixedInterval, 10) || 30),
             lastRequestTime: null,
-            nextCheckTime: null,
-            pendingRequestId: null
+            nextCheckTime: blockMode === 'auto' ? (Date.now() + AUTO_BLOCK_MESSAGE_DELAYS_MS[0]) : null,
+            pendingRequestId: null,
+            autoStage: 0,
+            autoRunStartedAt: blockMode === 'auto' ? Date.now() : null
         };
-        if (typeof saveData === 'function') saveData();
-        if (typeof renderChatList === 'function') renderChatList();
-        if (typeof showToast === 'function') showToast('已拉黑该角色');
-        if (typeof switchScreen === 'function') switchScreen('chat-list-screen');
+        try {
+            await persistBlockCharacter(char, 'block_system:blockCharacter');
+            if (typeof renderChatList === 'function') renderChatList();
+            if (typeof showToast === 'function') showToast('已拉黑该角色');
+            if (typeof switchScreen === 'function') switchScreen('chat-list-screen');
+        } catch (e) {
+            // 保存失败时回滚内存状态，避免 UI 看起来已拉黑但刷新后丢失。
+            char.isBlocked = false;
+            char.blockedAt = null;
+            if (char.blockHistory && char.blockHistory.length) char.blockHistory.pop();
+            char.blockReapply = null;
+        }
     }
 
-    function unblockCharacter(charId) {
+    async function unblockCharacter(charId) {
         var char = db.characters.find(function (c) { return c.id === charId; });
         if (!char) return;
+        var prevIsBlocked = !!char.isBlocked;
+        var prevBlockedAt = char.blockedAt;
+        var prevPendingRequestId = char.blockReapply ? char.blockReapply.pendingRequestId : undefined;
+        var lastBlock = char.blockHistory && char.blockHistory[char.blockHistory.length - 1];
+        var prevUnblockedAt = lastBlock ? lastBlock.unblockedAt : undefined;
+
         char.isBlocked = false;
         char.blockedAt = null;
-        if (char.blockReapply) char.blockReapply.pendingRequestId = null;
-        var lastBlock = char.blockHistory && char.blockHistory[char.blockHistory.length - 1];
+        if (char.blockReapply) {
+            char.blockReapply.pendingRequestId = null;
+            char.blockReapply.nextCheckTime = null;
+            char.blockReapply.autoStage = AUTO_BLOCK_MESSAGE_DELAYS_MS.length;
+        }
         if (lastBlock) lastBlock.unblockedAt = Date.now();
-        if (typeof saveData === 'function') saveData();
-        if (typeof renderChatList === 'function') renderChatList();
-        if (typeof showToast === 'function') showToast('已解除拉黑');
+
+        try {
+            await persistBlockCharacter(char, 'block_system:unblockCharacter');
+            if (typeof renderChatList === 'function') renderChatList();
+            if (typeof showToast === 'function') showToast('已解除拉黑');
+        } catch (e) {
+            // 保存失败时回滚内存状态，避免 UI 看起来已解除但刷新后仍被拉黑。
+            char.isBlocked = prevIsBlocked;
+            char.blockedAt = prevBlockedAt;
+            if (char.blockReapply) char.blockReapply.pendingRequestId = prevPendingRequestId;
+            if (lastBlock) lastBlock.unblockedAt = prevUnblockedAt;
+        }
     }
 
     // 角色主动拉黑用户（由 AI 回复中的 [char-action:block-user|reason:xxx] 触发）
@@ -377,11 +559,49 @@
         char.blockedByCharReason = (reason || '').trim() || '不想再聊了';
         if (!char.charBlockHistory) char.charBlockHistory = [];
         char.charBlockHistory.push({ blockedAt: Date.now(), reason: char.blockedByCharReason, unblockedAt: null });
-        if (typeof saveData === 'function') saveData();
+        // AI 回复处理中不在这里中途保存；最终随本轮 saveCharacterData 落库，避免旧对象抢写。
         if (typeof renderChatList === 'function') renderChatList();
         if (typeof showToast === 'function') showToast('对方已将你拉黑');
         var overlay = document.getElementById('char-blocked-overlay');
         if (overlay) overlay.style.display = 'flex';
+    }
+
+    // 角色主动解除自己对用户的拉黑（由 AI 回复中的 [char-action:unblock-user|reason:xxx] 触发）
+    function charUnblockUser(charId, reason) {
+        var char = db.characters.find(function (c) { return c.id === charId; });
+        if (!char || !char.isBlockedByChar) return { ok: false, error: '当前未被该角色拉黑' };
+        var displayName = char.remarkName || char.realName || '对方';
+        var cleanReason = (reason || '').trim();
+
+        char.isBlockedByChar = false;
+        char.blockedByCharAt = null;
+        char.blockedByCharReason = '';
+        if (!char.charBlockHistory) char.charBlockHistory = [];
+        var lastEntry = char.charBlockHistory[char.charBlockHistory.length - 1];
+        if (lastEntry && !lastEntry.unblockedAt) {
+            lastEntry.unblockedAt = Date.now();
+            if (cleanReason) lastEntry.unblockReason = cleanReason.slice(0, 120);
+        }
+
+        if (!char.history) char.history = [];
+        char.history.push({
+            id: 'msg_system_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+            role: 'system',
+            content: '[system-display:' + displayName + '主动解除了对你的拉黑，可以继续聊天]',
+            parts: [],
+            timestamp: Date.now()
+        });
+
+        var overlay = document.getElementById('char-blocked-overlay');
+        if (overlay) overlay.style.display = 'none';
+        if (typeof renderChatList === 'function') renderChatList();
+        if (typeof renderMessages === 'function' && typeof currentChatId !== 'undefined' && currentChatId === charId) {
+            renderMessages(false, true);
+        }
+        if (typeof showToast === 'function') showToast(displayName + '主动把你加回来了');
+
+        // 不在这里中途保存：该指令通常发生在 AI 回复处理中，最终会随本轮 saveCharacterData 一起落库，避免旧对象抢写。
+        return { ok: true };
     }
 
     // 用户提交好友申请 → 立即调 API 让角色决定接受/拒绝，几秒内返回
@@ -441,14 +661,14 @@
                 parts: [],
                 timestamp: Date.now()
             });
-            if (typeof saveData === 'function') saveData();
+            await persistBlockCharacter(char, 'block_system:userFriendRequestAccepted');
             if (typeof renderChatList === 'function') renderChatList();
             var overlay = document.getElementById('char-blocked-overlay');
             if (overlay) overlay.style.display = 'none';
             if (typeof showToast === 'function') showToast('对方已同意你的好友申请');
             if (typeof renderMessages === 'function') renderMessages(false, true);
         } else {
-            if (typeof saveData === 'function') saveData();
+            await persistBlockCharacter(char, 'block_system:userFriendRequestRejected');
             if (typeof showToast === 'function') showToast('对方拒绝了你：' + (rejectReason || '未说明理由'));
         }
         return { ok: true, accept: accept, rejectReason: rejectReason };
@@ -457,6 +677,7 @@
     window.blockCharacter = blockCharacter;
     window.unblockCharacter = unblockCharacter;
     window.charBlockUser = charBlockUser;
+    window.charUnblockUser = charUnblockUser;
     window.submitUserFriendRequest = submitUserFriendRequest;
     window.generateAndShowFriendRequest = generateAndShowFriendRequest;
     window.checkBlockedCharacterRequests = checkBlockedCharacterRequests;

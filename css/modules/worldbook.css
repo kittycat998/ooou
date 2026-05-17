@@ -268,3 +268,18 @@
     margin-top: 8px;
     padding-top: 12px !important;
 }
+
+/* 世界书纯显示排序拖拽：只影响列表显示顺序，不影响权重/AI读取顺序 */
+.world-book-ui-drag-handle {
+    -webkit-user-select: none;
+    user-select: none;
+}
+.world-book-ui-drag-handle:active {
+    cursor: grabbing !important;
+}
+.world-book-item.wb-ui-dragging {
+    opacity: 0.72;
+    background: #fff7fb !important;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+    z-index: 5;
+}

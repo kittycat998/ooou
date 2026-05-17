@@ -2,6 +2,25 @@
 
 let generatingChatId = null;
 
+async function saveJournalOwnerData(chat, reason = 'journal-save') {
+    if (!chat || !chat.id) return;
+    try {
+        const isPrivate = (db.characters || []).some(c => c && c.id === chat.id);
+        const isGroup = (db.groups || []).some(g => g && g.id === chat.id);
+        if (isPrivate && typeof saveCharacterData === 'function') {
+            await saveCharacterData(chat, reason);
+            return;
+        }
+        if (isGroup && typeof saveGroupData === 'function') {
+            await saveGroupData(chat, reason);
+            return;
+        }
+    } catch (err) {
+        console.warn('[日记保存] 局部保存失败，尝试全量保存:', err);
+    }
+    await saveData();
+}
+
 function setupMemoryJournalScreen() {
     const generateNewJournalBtn = document.getElementById('generate-new-journal-btn');
     const generateJournalModal = document.getElementById('generate-journal-modal');
@@ -102,7 +121,7 @@ function setupMemoryJournalScreen() {
                 if (!chat) return;
 
                 chat.memoryJournals = chat.memoryJournals.filter(j => !selectedJournalIds.has(j.id));
-                await saveData();
+                await saveJournalOwnerData(chat, 'journal-batch-delete');
                 toggleMultiSelectMode(false);
                 renderJournalList();
                 showToast('已批量删除');
@@ -178,24 +197,28 @@ function setupMemoryJournalScreen() {
         const combinedContent = selectedJournals.map(j => `【${j.title}】\n${j.content}`).join('\n\n---\n\n');
 
         // 4. 构建 Prompt
-        let summaryPrompt = `你是一个专业的档案记录员。请将以下多篇日记合并整理成一篇连贯、精简的“回忆录”。\n\n`;
+        let summaryPrompt = `你不是档案记录员。你要把多篇日记逐篇整理成“角色本人视角的长期记忆精简合集”，用于后续对话延续关系、情绪、语气、边界和重要经历。\n\n`;
 
-        summaryPrompt += `【核心要求】\n`;
-        summaryPrompt += `1. **体现时间进程**：正文内容必须按时间顺序组织，并明确指出时间点。**格式规范：**请严格按照“x年x月x日，发生了[事件]”的格式进行叙述，确保时间线清晰。\n`;
-        summaryPrompt += `2. **客观平实**：使用第三人称视角，客观陈述事实。**绝对禁止使用强烈的情绪词汇**（如“极度愤怒”、“痛彻心扉”、“欣喜若狂”等），保持冷静、克制的叙述风格。\n`;
-        summaryPrompt += `3. **抓取重点**：识别对话中的核心事件、重要话题转折、关键决策或信息。忽略无关的闲聊和琐碎细节。\n`;
-        summaryPrompt += `4. **关键原话摘录（重要）**：\n`;
-        summaryPrompt += `    - 仅当出现具有**极高情感价值**（如表白、郑重承诺、极具感染力的情感宣泄）或**重大剧情价值**（如揭示核心秘密、决定性瞬间）的对话时，请**直接引用角色的原话**。\n`;
-        summaryPrompt += `    - **引用格式**：使用引号包裹原话，例如：${chat.realName}说：“我永远不会离开你。”\n`;
-        summaryPrompt += `    - **严格控制数量**：只摘录最闪光、最不可替代的那几句。如果聊天记录平淡无奇或全是日常琐事，**请不要摘录任何原话**，以免破坏摘要的精简性。\n`;
-        summaryPrompt += `5. **无升华**：不要进行价值升华、感悟或总结性评价，仅记录发生了什么。\n\n`;
+        summaryPrompt += `核心规则：不要把多篇日记融合成一个连续大段，也不要把不同日期揉成“这一段时间”。请严格按输入日记的顺序逐篇精简，每篇保留独立的时间边界、标题、情绪与关键细节。\n\n`;
 
-        summaryPrompt += `你的输出必须是一个JSON对象，包含以下两个字段：\n`;
-        summaryPrompt += `- 'title': 一个概括性的标题，例如“1月上旬·关于旅行的筹备与出发”。\n`;
-        summaryPrompt += `- 'content': 合并后的正文内容。\n\n`;
+        summaryPrompt += `写作要求：\n`;
+        summaryPrompt += `1. 使用角色第一人称，用“我”记录经历、情绪、判断、承诺、冲突和变化。称呼对方时沿用原文中的名字、昵称或关系称呼，不要写“用户”，不要写成旁观者视角。\n`;
+        summaryPrompt += `2. 每篇日记各自精简，不要合并时间线，不要把多篇内容压成同一个标题或同一个大事件。\n`;
+        summaryPrompt += `3. 保留角色本人的态度和反应。不要只写“我们沟通了”“关系加深了”，要写清楚我当时为什么在意、怎么反应、后来确认了什么、记住了什么。\n`;
+        summaryPrompt += `4. 优先保留会影响后续回复质量的内容：关系确认、边界、雷区、安抚方式、吃醋点、冲突处理、称呼、承诺、重要偏好和约定等。\n`;
+        summaryPrompt += `5. 保留推动情绪或关系变化的具体细节，例如日期、昵称、截图、礼物、转账、外卖、软件名、功能名、特殊物品等。不要把具体事件压成抽象标签。\n`;
+        summaryPrompt += `6. 亲密、欲望、占有、吃醋、身体想象等内容如果影响关系或偏好，需要如实记录其作用；不要回避，也不要扩写成新的剧情。\n`;
+        summaryPrompt += `7. 近期内容保留更多细节和原文气口，较久远或重复内容可以压缩，但仍要保留各篇之间的边界。\n`;
+        summaryPrompt += `8. 语言要简洁但有温度，像角色本人认真回忆。不要写成报告、模板总结、心理分析、鸡汤或价值升华。不要伪造原文没有的信息。\n`;
+        summaryPrompt += `9. 不要机械套用固定句式，不要每段都重复“我记得 / 她当时 / 我当时 / 这件事之后”。这些只是视角提醒，不是输出模板。\n`;
+        summaryPrompt += `10. 每篇精简内容后都必须写“留下的关键细节：”。关键细节用短句列表呈现，每条以“* ”开头；每条都必须是具体可用的事实或记忆锚点，不能写“关系更深了”“彼此更理解了”“感情更好了”这类空泛评价。\n\n`;
 
-        summaryPrompt += `Strictly output in JSON format only. Do not speak outside the JSON object.\n\n`;
-        summaryPrompt += `待合并的日记内容如下：\n\n${combinedContent}`;
+        summaryPrompt += `输出必须是 JSON，且只输出 JSON，不要代码块，不要额外解释：\n\n`;
+        summaryPrompt += `{\n`;
+        summaryPrompt += `  "title": "根据内容生成具体标题，例如“时间范围·核心记忆主题”",\n`;
+        summaryPrompt += `  "content": "【原日记时间或范围｜原日记标题】\\n第一人称精简正文……\\n\\n留下的关键细节：\\n* 具体记忆点\\n* 具体记忆点\\n\\n【原日记时间或范围｜原日记标题】\\n第一人称精简正文……\\n\\n留下的关键细节：\\n* 具体记忆点\\n* 具体记忆点"\n`;
+        summaryPrompt += `}\n\n`;
+        summaryPrompt += `待逐篇精简的日记内容如下：\n\n${combinedContent}`;
 
         showToast('正在合并精简，请稍候...');
         
@@ -263,7 +286,7 @@ function setupMemoryJournalScreen() {
                 chat.memoryJournals = [];
             }
             chat.memoryJournals.push(newJournal);
-            await saveData();
+            await saveJournalOwnerData(chat, 'journal-merge');
 
             renderJournalList();
             showToast('日记合并完成！');
@@ -330,7 +353,7 @@ function setupMemoryJournalScreen() {
         // 同步更新旧字段以保持潜在的向后兼容性
         chat.journalWorldBookIds = selectedIds;
 
-        await saveData();
+        await saveJournalOwnerData(chat, 'journal-style-settings');
         journalStyleModal.classList.remove('visible');
         showToast('日记风格设置已保存');
     });
@@ -397,7 +420,7 @@ function setupMemoryJournalScreen() {
         if (target.closest('.delete-journal-btn')) {
             if (confirm('确定要删除这篇日记吗？')) {
                 chat.memoryJournals = chat.memoryJournals.filter(j => j.id !== journalId);
-                await saveData();
+                await saveJournalOwnerData(chat, 'journal-delete-one');
                 renderJournalList();
                 showToast('日记已删除');
             }
@@ -406,7 +429,7 @@ function setupMemoryJournalScreen() {
 
         if (target.closest('.favorite-journal-btn')) {
             journal.isFavorited = !journal.isFavorited;
-            await saveData();
+            await saveJournalOwnerData(chat, 'journal-favorite-toggle');
             target.closest('.favorite-journal-btn').classList.toggle('favorited', journal.isFavorited);
             showToast(journal.isFavorited ? '已收藏，已置顶' : '已取消收藏');
             renderJournalList();
@@ -465,9 +488,9 @@ function setupMemoryJournalScreen() {
         const journal = chat.memoryJournals.find(j => j.id === currentJournalDetailId);
         if (!journal) return;
 
-        journal.title = titleEl.textContent.trim();
-        journal.content = contentEl.textContent.trim();
-        await saveData();
+        journal.title = (titleEl.innerText || titleEl.textContent || '').trim();
+        journal.content = (contentEl.innerText || contentEl.textContent || '').trim();
+        await saveJournalOwnerData(chat, 'journal-detail-edit');
 
         titleEl.isContentEditable = false;
         contentEl.isContentEditable = false;
@@ -505,7 +528,7 @@ async function manualAddJournal(isMemory) {
         manualType: isMemory ? 'memory' : 'diary'
     };
     chat.memoryJournals.push(newJournal);
-    await saveData();
+    await saveJournalOwnerData(chat, 'journal-manual-add');
     renderJournalList();
     showToast(isMemory ? '新记忆已添加并收藏置顶' : '日记已添加');
 }
@@ -628,7 +651,7 @@ function importJournals(file) {
             }
 
             window._journalSearchKeyword = '';
-            await saveData();
+            await saveJournalOwnerData(chat, 'journal-import');
 
             if (typeof renderJournalList === 'function') renderJournalList();
             if (typeof renderChatList === 'function') renderChatList();
@@ -1025,7 +1048,7 @@ Strictly output in JSON format only. Do not speak outside the JSON object.
             chat.memoryJournals = [];
         }
         chat.memoryJournals.push(newJournal);
-        await saveData();
+        await saveJournalOwnerData(chat, 'journal-generate');
 
         renderJournalList();
         showToast(silent ? `日记总结已生成 (第${start}-${end}条)` : '新日记已生成！');
@@ -1114,7 +1137,7 @@ async function checkAndTriggerAutoJournal(chat) {
     try {
         await generateJournal(startIndex, endIndex, false, true);
         chat.lastAutoJournalIndex = endIndex;
-        await saveData();
+        await saveJournalOwnerData(chat, 'journal-auto-index');
     } catch (err) {
         console.error('自动总结失败:', err);
         showApiError(err);

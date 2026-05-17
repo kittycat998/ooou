@@ -28,6 +28,101 @@ async function saveWorldBookEntriesFast(books) {
     }
 }
 
+function getWorldBookUiOrder(book, fallbackIndex = 0) {
+    const value = book && book.uiOrder !== undefined ? parseInt(book.uiOrder, 10) : NaN;
+    return Number.isFinite(value) ? value : fallbackIndex * 10;
+}
+
+function sortWorldBooksForUi(list) {
+    return (Array.isArray(list) ? list : []).map((book, index) => ({ book, index }))
+        .sort((a, b) => {
+            const ao = getWorldBookUiOrder(a.book, a.index);
+            const bo = getWorldBookUiOrder(b.book, b.index);
+            if (ao !== bo) return ao - bo;
+            return a.index - b.index;
+        })
+        .map(item => item.book);
+}
+
+async function saveWorldBookUiOrderFromList(listEl) {
+    if (!listEl) return;
+    const ids = Array.from(listEl.querySelectorAll('.world-book-item'))
+        .map(item => item.dataset.id)
+        .filter(Boolean);
+    const changedBooks = [];
+    ids.forEach((id, index) => {
+        const book = db.worldBooks.find(wb => wb.id === id);
+        if (!book) return;
+        const nextOrder = (index + 1) * 10;
+        if (book.uiOrder !== nextOrder) {
+            book.uiOrder = nextOrder;
+            changedBooks.push(book);
+        }
+    });
+    if (changedBooks.length) {
+        await saveWorldBookEntriesFast(changedBooks);
+    }
+}
+
+function setupWorldBookUiDragSort(listEl) {
+    if (!listEl || listEl.__wbUiDragReady) return;
+    listEl.__wbUiDragReady = true;
+    let draggingItem = null;
+    let dragStarted = false;
+
+    function finishDrag(save = true) {
+        if (!draggingItem) return;
+        const current = draggingItem;
+        current.classList.remove('wb-ui-dragging');
+        draggingItem = null;
+        dragStarted = false;
+        if (save) {
+            saveWorldBookUiOrderFromList(listEl).then(() => {
+                if (typeof showToast === 'function') showToast('世界书显示顺序已更新');
+            }).catch(err => {
+                console.error('[世界书排序] 保存失败:', err);
+                if (typeof showToast === 'function') showToast('排序保存失败');
+            });
+        }
+    }
+
+    listEl.addEventListener('pointerdown', (ev) => {
+        const handle = ev.target.closest('.world-book-ui-drag-handle');
+        if (!handle) return;
+        const item = handle.closest('.world-book-item');
+        if (!item || !listEl.contains(item)) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        draggingItem = item;
+        dragStarted = false;
+        item.classList.add('wb-ui-dragging');
+        try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
+    });
+
+    listEl.addEventListener('pointermove', (ev) => {
+        if (!draggingItem) return;
+        ev.preventDefault();
+        dragStarted = true;
+        draggingItem.style.pointerEvents = 'none';
+        const target = document.elementFromPoint(ev.clientX, ev.clientY);
+        draggingItem.style.pointerEvents = '';
+        const overItem = target && target.closest ? target.closest('.world-book-item') : null;
+        if (!overItem || overItem === draggingItem || overItem.parentElement !== listEl) return;
+        const rect = overItem.getBoundingClientRect();
+        const before = ev.clientY < rect.top + rect.height / 2;
+        listEl.insertBefore(draggingItem, before ? overItem : overItem.nextSibling);
+    });
+
+    listEl.addEventListener('pointerup', (ev) => {
+        if (!draggingItem) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        finishDrag(dragStarted);
+    });
+
+    listEl.addEventListener('pointercancel', () => finishDrag(false));
+}
+
 function enterWorldBookMultiSelectMode(initialId, initialCategory = null) {
     if (isWorldBookMultiSelectMode) return;
     isWorldBookMultiSelectMode = true;
@@ -416,12 +511,14 @@ function setupWorldBookApp() {
     const editWorldBookForm = document.getElementById('edit-world-book-form');
     const worldBookNameInput = document.getElementById('world-book-name');
     const worldBookContentInput = document.getElementById('world-book-content');
+    const worldBookWeightInput = document.getElementById('world-book-weight');
     const worldBookListContainer = document.getElementById('world-book-list-container');
     const worldBookIdInput = document.getElementById('world-book-id');
 
     addWorldBookBtn.addEventListener('click', () => {
         currentEditingWorldBookId = null;
         editWorldBookForm.reset();
+        if (worldBookWeightInput) worldBookWeightInput.value = '100';
         document.querySelector('input[name="world-book-position"][value="before"]').checked = true;
         document.getElementById('world-book-global').checked = false;
         switchScreen('edit-world-book-screen');
@@ -452,6 +549,8 @@ function setupWorldBookApp() {
         const category = document.getElementById('world-book-category').value.trim();
         const position = document.querySelector('input[name="world-book-position"]:checked').value;
         const isGlobal = document.getElementById('world-book-global').checked;
+        const weightRaw = worldBookWeightInput ? parseInt(worldBookWeightInput.value, 10) : 100;
+        const weight = isNaN(weightRaw) ? 100 : weightRaw;
         if (!name || !content) return showToast('名称和内容不能为空');
 
         if (submitBtn) submitBtn.disabled = true;
@@ -464,12 +563,13 @@ function setupWorldBookApp() {
                     book.content = content;
                     book.position = position;
                     book.category = category;
+                    book.weight = weight;
                     book.isGlobal = isGlobal;
                     if (typeof book.disabled === 'undefined') book.disabled = false;
                     bookToSave = book;
                 }
             } else {
-                bookToSave = {id: `wb_${Date.now()}`, name, content, position, category, isGlobal, disabled: false};
+                bookToSave = {id: `wb_${Date.now()}`, name, content, position, category, weight, isGlobal, disabled: false};
                 db.worldBooks.push(bookToSave);
             }
             if (bookToSave) {
@@ -534,6 +634,7 @@ function setupWorldBookApp() {
                     worldBookNameInput.value = book.name;
                     worldBookContentInput.value = book.content;
                     document.getElementById('world-book-category').value = book.category || '';
+                    if (worldBookWeightInput) worldBookWeightInput.value = (book.weight !== undefined ? book.weight : 100);
                     document.querySelector(`input[name="world-book-position"][value="${book.position}"]`).checked = true;
                     document.getElementById('world-book-global').checked = book.isGlobal || false;
                     switchScreen('edit-world-book-screen');
@@ -751,7 +852,7 @@ function renderWorldBookList(expandedCategory = null) {
         categoryList.className = 'list-container';
         categoryList.style.padding = '0';
 
-        groupedBooks[category].forEach(book => {
+        sortWorldBooksForUi(groupedBooks[category]).forEach(book => {
             const li = document.createElement('li');
             li.className = 'list-item world-book-item';
             li.dataset.id = book.id;
@@ -766,12 +867,20 @@ function renderWorldBookList(expandedCategory = null) {
             }
 
             const disabledBadge = isDisabled ? ' <span class="world-book-disabled-badge">未启用</span>' : '';
-            li.innerHTML = `<div class="item-details" style="padding-left: 0;"><div class="item-name">${book.name}${book.isGlobal ? ' <span style="display:inline-block;background:#4CAF50;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">全局</span>' : ''}${disabledBadge}</div><div class="item-preview">${book.content}</div></div>`;
+            const weightValue = (book.weight !== undefined && book.weight !== null) ? book.weight : 100;
+            const weightBadge = ` <span style="display:inline-block;background:#f2f2f2;color:#666;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">权重 ${weightValue}</span>`;
+            li.innerHTML = `<div class="item-details" style="padding-left: 0;"><div class="item-name">${book.name}${book.isGlobal ? ' <span style="display:inline-block;background:#4CAF50;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">全局</span>' : ''}${weightBadge}${disabledBadge}</div><div class="item-preview">${book.content}</div></div>`;
             
             if (!isWorldBookMultiSelectMode) {
                 const btnWrap = document.createElement('div');
                 btnWrap.className = 'world-book-item-actions';
                 btnWrap.style.cssText = 'position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 4px;';
+                const dragHandle = document.createElement('button');
+                dragHandle.type = 'button';
+                dragHandle.className = 'action-btn world-book-ui-drag-handle';
+                dragHandle.title = '拖动调整显示顺序（不影响权重/AI读取顺序）';
+                dragHandle.style.cssText = 'padding: 4px 6px; border: none; border-radius: 4px; background: #f5f5f5; color: #888; cursor: grab; touch-action: none; font-size: 16px; line-height: 1;';
+                dragHandle.textContent = '☰';
                 const toggleBtn = document.createElement('button');
                 toggleBtn.type = 'button';
                 toggleBtn.className = 'action-btn world-book-toggle-enabled-btn';
@@ -809,6 +918,7 @@ function renderWorldBookList(expandedCategory = null) {
                     renderWorldBookList();
                     showToast('世界书条目已删除');
                 });
+                btnWrap.appendChild(dragHandle);
                 btnWrap.appendChild(toggleBtn);
                 btnWrap.appendChild(delBtn);
                 li.style.position = 'relative';
@@ -818,6 +928,9 @@ function renderWorldBookList(expandedCategory = null) {
         });
 
         content.appendChild(categoryList);
+        if (!isWorldBookMultiSelectMode) {
+            setupWorldBookUiDragSort(categoryList);
+        }
         section.appendChild(header);
         section.appendChild(content);
         worldBookListContainer.appendChild(section);
@@ -847,7 +960,7 @@ function renderCategorizedWorldBookList(container, books, selectedIds, idPrefix)
     });
 
     sortedCategories.forEach(category => {
-        const categoryBooks = groupedBooks[category];
+        const categoryBooks = sortWorldBooksForUi(groupedBooks[category]);
         const allInCategorySelected = categoryBooks.every(book => selectedIds.includes(book.id));
 
         const groupEl = document.createElement('div');

@@ -1287,9 +1287,18 @@ function generateGroupSystemPrompt(group) {
     const globalIds = globalBooks.map(wb => wb.id);
     const allBookIds = [...new Set([...associatedIds, ...globalIds])];
     
-    const worldBooksBefore = allBookIds.map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(wb => wb && !wb.disabled).map(wb => wb.content).join('\n');
-    const worldBooksMiddle = allBookIds.map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'middle')).filter(wb => wb && !wb.disabled).map(wb => wb.content).join('\n');
-    const worldBooksAfter = allBookIds.map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(wb => wb && !wb.disabled).map(wb => wb.content).join('\n');
+    // 按位置分类；同一注入位置内按权重升序排列（数字越大越靠后）
+    const sortWorldBooksByWeight = (a, b) => {
+        const aw = (a && a.weight !== undefined) ? parseInt(a.weight, 10) : 100;
+        const bw = (b && b.weight !== undefined) ? parseInt(b.weight, 10) : 100;
+        return (isNaN(aw) ? 100 : aw) - (isNaN(bw) ? 100 : bw);
+    };
+    const activeWorldBooks = allBookIds
+        .map(id => db.worldBooks.find(wb => wb.id === id))
+        .filter(wb => wb && !wb.disabled);
+    const worldBooksBefore = activeWorldBooks.filter(wb => wb.position === 'before').sort(sortWorldBooksByWeight).map(wb => wb.content).join('\n');
+    const worldBooksMiddle = activeWorldBooks.filter(wb => wb.position === 'middle').sort(sortWorldBooksByWeight).map(wb => wb.content).join('\n');
+    const worldBooksAfter = activeWorldBooks.filter(wb => wb.position === 'after').sort(sortWorldBooksByWeight).map(wb => wb.content).join('\n');
 
     let prompt = `你正在一个名为“404”的线上聊天软件中，在一个名为“${group.name}”的群聊里进行角色扮演。请严格遵守以下所有规则：\n\n`;
 

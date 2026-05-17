@@ -1586,6 +1586,13 @@
                         <input type="text" id="world-book-category" placeholder="例如：人物、地点、组织（可选）">
                     </div>
                     <div class="form-group">
+                        <label for="world-book-weight">权重</label>
+                        <input type="number" id="world-book-weight" value="100" step="1" placeholder="默认 100">
+                        <p style="font-size: 12px; color: #999; margin-top: 5px;">
+                            同一注入位置内按权重排序；数字越大越靠后，通常越贴近后文，默认 100。
+                        </p>
+                    </div>
+                    <div class="form-group">
                         <label for="world-book-content">条目内容</label>
                         <textarea id="world-book-content" rows="8" placeholder="详细描述此项设定..." required></textarea>
                     </div>
@@ -3758,6 +3765,22 @@
                                     </div>
                                 </div>
                                 <div class="kkt-item">
+                                    <div class="kkt-item-label">角色生日</div>
+                                    <div class="kkt-item-control">
+                                        <input type="date" id="setting-char-birthday"
+                                            style="text-align:right; border:none; background:transparent;">
+                                    </div>
+                                </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">按生日动态计算角色年龄</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-char-enable-dynamic-age">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="kkt-item">
                                     <div class="kkt-item-label">备注名</div>
                                     <div class="kkt-item-control">
                                         <input type="text" id="setting-char-remark" autocomplete="off"
@@ -3919,6 +3942,22 @@
                                         <input type="text" id="setting-my-nickname" autocomplete="off"
                                             style="text-align:right; border:none; background:transparent;"
                                             placeholder="点击修改">
+                                    </div>
+                                </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">我的生日</div>
+                                    <div class="kkt-item-control">
+                                        <input type="date" id="setting-my-birthday"
+                                            style="text-align:right; border:none; background:transparent;">
+                                    </div>
+                                </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">按生日动态计算我的年龄</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-my-enable-dynamic-age">
+                                            <span class="kkt-slider"></span>
+                                        </label>
                                     </div>
                                 </div>
                                 <div class="kkt-item" style="flex-direction:column; align-items:flex-start;">
@@ -5120,6 +5159,106 @@
                                 </div>
                             </div>
                             
+
+                            <!-- 虚拟地点与天气设置 -->
+                            <div class="kkt-group" style="margin-top:15px;">
+                                <div style="margin-bottom: 10px; padding-left: 8px;">
+                                    <div class="kkt-item-label" style="font-weight: bold; color: var(--primary-color);">地点与天气</div>
+                                    <p style="font-size: 11px; color: #999; margin: 3px 0 0;">虚拟地点用于剧情空间感；映照真实地点只用于获取天气。</p>
+                                </div>
+
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">写入聊天上下文</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-weather-context-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">让角色知道真实天气地点</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-weather-expose-real-location">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">开启角色地点天气</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-char-weather-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div id="setting-char-weather-location-container" style="display:none;">
+                                    <div class="kkt-item" style="flex-direction:column; align-items:flex-start;">
+                                        <div class="kkt-item-label" style="margin-bottom:8px; font-size:12px;">角色虚拟地点</div>
+                                        <input type="text" id="setting-char-virtual-location" placeholder="例如：林见的房间、雾港旧公寓、深空基地"
+                                            style="width:100%; border:1px solid #eee; border-radius:8px; padding:8px; box-sizing:border-box;">
+                                    </div>
+                                    <div class="kkt-item" style="flex-direction:column; align-items:flex-start;">
+                                        <div class="kkt-item-label" style="margin-bottom:8px; font-size:12px;">映照真实地点（用于天气）</div>
+                                        <input type="text" id="setting-char-weather-location" placeholder="例如：上海、东京、31.23,121.47"
+                                            style="width:100%; border:1px solid #eee; border-radius:8px; padding:8px; box-sizing:border-box;">
+                                    </div>
+                                </div>
+
+                                <div class="kkt-item" style="border-top:1px solid #f5f5f5; padding-top:12px;">
+                                    <div class="kkt-item-label">开启用户地点天气</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-user-weather-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div id="setting-user-weather-location-container" style="display:none;">
+                                    <div class="kkt-item" style="flex-direction:column; align-items:flex-start;">
+                                        <div class="kkt-item-label" style="margin-bottom:8px; font-size:12px;">用户虚拟地点</div>
+                                        <input type="text" id="setting-user-virtual-location" placeholder="例如：星归的小房间、床上、小家"
+                                            style="width:100%; border:1px solid #eee; border-radius:8px; padding:8px; box-sizing:border-box;">
+                                    </div>
+                                    <div class="kkt-item" style="flex-direction:column; align-items:flex-start;">
+                                        <div class="kkt-item-label" style="margin-bottom:8px; font-size:12px;">映照真实地点（用于天气）</div>
+                                        <div style="display:flex; width:100%; gap:8px;">
+                                            <input type="text" id="setting-user-weather-location" placeholder="例如：杭州、成都、30.27,120.15"
+                                                style="flex:1; border:1px solid #eee; border-radius:8px; padding:8px; box-sizing:border-box;">
+                                            <button type="button" id="setting-user-weather-locate-btn" class="btn btn-secondary btn-small" style="white-space:nowrap; padding:0 12px;">📍 定位</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="kkt-item" style="border-top:1px solid #f5f5f5; padding-top:12px;">
+                                    <div class="kkt-item-label">天气服务商</div>
+                                    <div class="kkt-item-control">
+                                        <select id="setting-weather-provider"
+                                            style="border:none; background:transparent; text-align:right; direction: rtl; appearance: none; -webkit-appearance: none; padding-right: 15px;">
+                                            <option value="openmeteo">Open-Meteo（免费免 Key）</option>
+                                            <option value="wttrin">wttr.in（免费免 Key）</option>
+                                            <option value="qweather">和风天气</option>
+                                            <option value="seniverse">心知天气</option>
+                                        </select>
+                                        <span class="kkt-arrow">›</span>
+                                    </div>
+                                </div>
+                                <div class="kkt-item" id="setting-weather-api-key-container" style="display:none;">
+                                    <div class="kkt-item-label">天气 API Key</div>
+                                    <div class="kkt-item-control">
+                                        <input type="password" id="setting-weather-api-key" autocomplete="new-password"
+                                            placeholder="和风/心知天气需要"
+                                            style="text-align:right; border:none; background:transparent; width: 100%;">
+                                    </div>
+                                </div>
+                                <div class="kkt-item-hint" style="padding: 0 16px 12px; font-size: 12px; color: #8e8e93; line-height: 1.4;">
+                                    关闭“写入聊天上下文”可完全省下天气地点 token；关闭真实地点开关时，真实地点只用于查询天气，不会告诉角色。除非话题相关，天气不会被强行播报。
+                                </div>
+                            </div>
+
                             <!-- NovelAI 生图设置（模型/尺寸/画师串） -->
                             <div class="kkt-group" style="margin-top:15px;">
                                 <div style="margin-bottom: 10px; padding-left: 8px;">
@@ -8423,6 +8562,7 @@
     <!-- [2. 核心交互层] -->
     <script src="js/ui.js"></script> <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
     <!-- Chat Modules -->
+    <script src="js/modules/weather.js"></script> <!-- 虚拟地点与天气服务 -->
     <script src="js/modules/chat_list.js"></script>
     <script src="js/modules/character_import.js"></script>
     <script src="js/modules/chat_render.js"></script>

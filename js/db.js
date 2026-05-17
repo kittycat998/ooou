@@ -186,8 +186,150 @@ const globalSettingKeys = [
 ];
 if (typeof window !== 'undefined') window.globalSettingKeysForBackup = globalSettingKeys;
 
-const appVersion = "WOW-v58.4.1-image-context-summary-2026-05-16";
+const appVersion = "WOW-v59.6-dynamic-age-2026-05-16";
 const updateLog = [
+    {
+        version: "WOW v59.6",
+        date: "2026-05-16",
+        notes: [
+            "WOW v59.6：新增角色与用户动态年龄。",
+            "角色设置页增加角色生日、按生日动态计算角色年龄。",
+            "用户设置区域增加我的生日、按生日动态计算我的年龄。",
+            "私聊主提示词只在开启开关且生日有效时注入当前年龄；年龄按当前日期实时计算。",
+            "角色设置保存继续走当前角色局部保存，不触发全量 saveData。"
+        ]
+    },
+    {
+        version: "WOW v59.5",
+        date: "2026-05-16",
+        notes: [
+            "WOW v59.5：调整私聊主提示词的身份与互动边界。",
+            "将“扮演角色/纯线上互动”口径改为“404 聊天软件界面呈现”，不再强行规定关系只能发生在线上。",
+            "空白无设定时默认以 AI 聊天对象/AI 助手身份交流，不凭空编造现实人类身份和线下日常。",
+            "有明确设定时按当前账号/设定身份自然承接，不主动跳出解释自己在角色扮演。"
+        ]
+    },
+    {
+        version: "WOW v59.4",
+        date: "2026-05-16",
+        notes: [
+            "WOW v59.4：新增私聊对话推进规则。",
+            "私聊系统提示词新增规则：减少机械复述、连续卡同一个点、逐条客服式回复和空转关心句。",
+            "要求每次回复至少带来一点新东西：态度变化、具体建议、情绪反应、行动推进、问题澄清或轻微转向。",
+            "本版只改私聊主提示词，不改群聊、不改世界书权重、不改天气地点。"
+        ]
+    },
+    {
+        version: "WOW v59.3",
+        date: "2026-05-16",
+        notes: [
+            "WOW v59.3：新增世界书列表纯显示拖动排序。",
+            "世界书条目右侧增加拖动把手，可调整列表显示顺序，方便查找。",
+            "拖动排序只保存 uiOrder 显示字段，不修改权重，不影响 AI 读取/注入顺序。",
+            "角色/群聊选择世界书弹窗也按该显示顺序展示。"
+        ]
+    },
+    {
+        version: "WOW v59.2",
+        date: "2026-05-16",
+        notes: [
+            "WOW v59.2：新增世界书权重。",
+            "世界书编辑页新增权重输入框，默认 100；同一注入位置内按权重升序排列，数字越大越靠后。",
+            "旧世界书条目会自动补默认权重 100。",
+            "聊天上下文拼接世界书时按 before / middle / after 原位置分类，并在每个位置内部按权重排序。",
+            "保留世界书快速保存，不回退全量保存。"
+        ]
+    },
+    {
+        version: "WOW v59.1",
+        date: "2026-05-16",
+        notes: [
+            "WOW v59.1：天气地点上下文控制。",
+            "角色设置页天气区域新增「写入聊天上下文」开关，关闭后完全不向聊天提示词注入天气地点，省 token。",
+            "新增「让角色知道真实天气地点」开关；关闭时真实地点只用于查询天气，不暴露给角色。",
+            "天气缓存从 24 小时改为 1 小时，让天气变化更及时。",
+            "暂不改天气请求方式；仍然保留失败兜底，不让天气 API 阻塞整体功能。"
+        ]
+    },
+    {
+        version: "WOW v59.0",
+        date: "2026-05-16",
+        notes: [
+            "WOW v59.0：新增虚拟地点与天气感知一期。",
+            "角色设置页「拓展」中增加地点与天气：角色/用户虚拟地点、映照真实地点、天气开关与天气服务商。",
+            "聊天上下文会注入 <environment>，让角色知道虚拟地点和映照天气；天气只作为背景感知，不要求机械播报。",
+            "天气服务借用 OVO5.9 的 Open-Meteo / wttr.in / 和风天气 / 心知天气底座，并保留天气缓存。",
+            "本版不改一起听距离，真实距离计算留到后续版本。"
+        ]
+    },
+    {
+        version: "WOW v58.5.7",
+        date: "2026-05-16",
+        notes: [
+            "WOW v58.5.7：修正日记逐篇精简的大标题示例。",
+            "日记合并精简的 JSON title 不再固定写“多篇日记精简合集”，改为要求模型根据内容生成具体标题。",
+            "不改逐篇精简正文、不改关键细节、不改日记局部保存。"
+        ]
+    },
+    {
+        version: "WOW v58.5.6",
+        date: "2026-05-16",
+        notes: [
+            "WOW v58.5.6：日记合并改为逐篇精简合集。",
+            "选中多篇日记后，不再把不同日期揉成一个大时间段；会按原日记顺序逐篇压缩。",
+            "每篇精简内容保留独立标题、时间边界、第一人称记忆正文，并各自输出“留下的关键细节”。",
+            "保留日记局部保存与手动换行修复。"
+        ]
+    },
+    {
+        version: "WOW v58.5.5",
+        date: "2026-05-16",
+        notes: [
+            "WOW v58.5.5：日记保存局部化。",
+            "日记详情编辑、手动新增、合并、导入、收藏、删除、批量删除和自动总结索引更新，改为优先保存当前角色/群聊数据。",
+            "保留 v58.5.4 的手动换行读取与第一人称合并提示词。"
+        ]
+    },
+    {
+        version: "WOW v58.5.4",
+        date: "2026-05-16",
+        notes: [
+            "WOW v58.5.4：优化日记编辑与合并。",
+            "日记详情编辑保存时改用 innerText 读取内容，保留手动换行。",
+            "日记合并提示词改为角色本人第一人称长期记忆总结，不再使用第三人称档案记录员口吻。",
+            "合并结果结尾固定输出“留下的关键细节”，用于后续对话复用具体记忆锚点。"
+        ]
+    },
+    {
+        version: "WOW v58.5.3",
+        date: "2026-05-16",
+        notes: [
+            "WOW v58.5.3：你拉黑角色后，若选择“角色自主判断”，会按 30 秒 / 3 分钟 / 6 分钟自动触发被拦截消息，消息尾部显示微信风格红底白色感叹号；角色也可自主决定是否发好友申请。",
+            "WOW v58.5.2：拉黑/解除拉黑保存改为等待落库。",
+            "用户拉黑角色、用户解除拉黑角色会等待当前角色局部保存成功后再刷新 UI，减少极端情况下刷新后状态丢失。",
+            "保存失败时回滚内存状态并提示保存失败。",
+            "不改角色主动解除拉黑、不改图片摘要、不改音乐/世界书/日历。"
+        ]
+    },
+    {
+        version: "WOW v58.5.1",
+        date: "2026-05-16",
+        notes: [
+            "WOW v58.5.1：拉黑主动作保存局部化第一批。",
+            "角色拉黑用户时不再在 AI 回复处理中途触发全量保存，改为等待本轮回复末尾统一局部保存。",
+            "用户拉黑/解除拉黑角色、用户好友申请被接受/拒绝，优先保存当前角色数据，不再全量扫库。",
+            "本版不重构被用户拉黑后的后台好友申请队列，先保守优化主动作保存链路。"
+        ]
+    },
+    {
+        version: "WOW v58.5",
+        date: "2026-05-16",
+        notes: [
+            "WOW v58.5：新增角色主动解除对用户的拉黑。",
+            "角色拉黑用户后，可以在被拉黑状态下通过隐藏指令主动把用户加回来，不再只能等待用户申请。",
+            "解除拉黑会停止遮罩、插入系统提示、刷新聊天，并优先走当前角色局部保存。"
+        ]
+    },
     {
         version: "WOW v58.4.1",
         date: "2026-05-16",
@@ -2295,6 +2437,17 @@ const loadData = async () => {
     if (db.forumSettings && db.forumSettings.charAltProbability === undefined) db.forumSettings.charAltProbability = 25;
     if (db.forumSettings && (db.forumSettings.charAltNames === undefined || typeof db.forumSettings.charAltNames !== 'object')) db.forumSettings.charAltNames = {};
 
+    // 世界书权重默认值
+    if (Array.isArray(db.worldBooks)) {
+        db.worldBooks.forEach(wb => {
+            if (wb && wb.weight === undefined) wb.weight = 100;
+            if (wb && typeof wb.weight === 'string') {
+                const parsed = parseInt(wb.weight, 10);
+                wb.weight = isNaN(parsed) ? 100 : parsed;
+            }
+        });
+    }
+
     // Data integrity checks
     db.characters.forEach(c => {
         if (!c.peekData) c.peekData = {}; 
@@ -2344,8 +2497,10 @@ const loadData = async () => {
         if (!c.blockHistory || !Array.isArray(c.blockHistory)) c.blockHistory = [];
         if (!c.friendRequests || !Array.isArray(c.friendRequests)) c.friendRequests = [];
         if (!c.blockReapply || typeof c.blockReapply !== 'object') {
-            c.blockReapply = { mode: 'fixed', fixedInterval: 30, lastRequestTime: null, nextCheckTime: null, pendingRequestId: null };
+            c.blockReapply = { mode: 'fixed', fixedInterval: 30, lastRequestTime: null, nextCheckTime: null, pendingRequestId: null, autoStage: 0, autoRunStartedAt: null };
         }
+        if (c.blockReapply.autoStage === undefined) c.blockReapply.autoStage = 0;
+        if (c.blockReapply.autoRunStartedAt === undefined) c.blockReapply.autoRunStartedAt = null;
         // 角色拉黑用户（角色主动拉黑）
         if (c.canBlockUser === undefined) c.canBlockUser = true;
         // 角色掌控模式：允许角色查看并操控用户手机
@@ -2353,6 +2508,21 @@ const loadData = async () => {
         if (c.myNickname === undefined) c.myNickname = '';
         if (c.characterCanChangeUserNickname === undefined) c.characterCanChangeUserNickname = false;
         if (c.musicControlEnabled === undefined) c.musicControlEnabled = false;
+        if (!c.weatherSettings || typeof c.weatherSettings !== 'object') c.weatherSettings = {};
+        if (c.weatherSettings.contextEnabled === undefined) c.weatherSettings.contextEnabled = true;
+        if (c.weatherSettings.exposeRealLocation === undefined) c.weatherSettings.exposeRealLocation = false;
+        if (c.weatherSettings.charEnabled === undefined) c.weatherSettings.charEnabled = false;
+        if (c.weatherSettings.userEnabled === undefined) c.weatherSettings.userEnabled = false;
+        if (c.weatherSettings.charVirtualLocation === undefined) c.weatherSettings.charVirtualLocation = '';
+        if (c.weatherSettings.userVirtualLocation === undefined) c.weatherSettings.userVirtualLocation = '';
+        if (c.weatherSettings.charWeatherLocation === undefined) c.weatherSettings.charWeatherLocation = '';
+        if (c.weatherSettings.userWeatherLocation === undefined) c.weatherSettings.userWeatherLocation = '';
+        if (c.weatherSettings.provider === undefined) c.weatherSettings.provider = 'openmeteo';
+        if (c.weatherSettings.apiKey === undefined) c.weatherSettings.apiKey = '';
+        if (c.birthday === undefined) c.birthday = '';
+        if (c.enableDynamicAge === undefined) c.enableDynamicAge = false;
+        if (c.myBirthday === undefined) c.myBirthday = '';
+        if (c.myEnableDynamicAge === undefined) c.myEnableDynamicAge = false;
         if (c.pendingUserNicknameChange === undefined) delete c.pendingUserNicknameChange;
         if (c.pendingMusicControlEvent === undefined) delete c.pendingMusicControlEvent;
         if (c.characterFavoriteAwareEnabled === undefined) c.characterFavoriteAwareEnabled = false;

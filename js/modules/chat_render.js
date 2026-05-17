@@ -1808,6 +1808,16 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
     if (bubbleElement && timestampStyle === 'bubble' && !bubbleElement.classList.contains('receipt-bubble') && !bubbleElement.classList.contains('theater-share-card-bubble') && !bubbleElement.classList.contains('family-card-receipt')) {
         bubbleElement.appendChild(timeSpan);
     }
+
+    if (bubbleElement && message && message.deliveryStatus === 'blocked') {
+        bubbleElement.classList.add('message-delivery-blocked');
+        const blockedIcon = document.createElement('span');
+        blockedIcon.className = 'blocked-delivery-icon';
+        blockedIcon.textContent = '!';
+        blockedIcon.setAttribute('aria-label', '未送达');
+        blockedIcon.title = '未送达';
+        bubbleElement.appendChild(blockedIcon);
+    }
     
     // Create message-info element manually to allow appending timestamp if needed
     const messageInfo = document.createElement('div');
